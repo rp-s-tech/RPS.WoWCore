@@ -465,6 +465,7 @@ class TC_GAME_API Spell
         void EffectSetPlayerDataElementCharacter();
         void EffectSetPlayerDataFlagAccount();
         void EffectSetPlayerDataFlagCharacter();
+		void EffectEquipTransmogOutfit();
         void EffectGiveHouseLevel();
         void EffectCollectHousingDecor();
         void EffectLearnHouseRoom();
@@ -656,6 +657,14 @@ class TC_GAME_API Spell
 
             // SPELL_EFFECT_UPGRADE_HEIRLOOM
             uint32 ItemId;
+
+            // SPELL_EFFECT_EQUIP_TRANSMOG_OUTFIT
+            struct
+            {
+                uint32 EquipAction;
+                uint32 TransmogOutfitId;
+                uint32 SituationTrigger;
+            } EquipTransmogOutfit;
 
             struct
             {
