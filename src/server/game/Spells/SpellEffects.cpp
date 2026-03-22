@@ -6744,3 +6744,268 @@ void Spell::EffectScrapItem()
     }
 }
 
+void Spell::EffectGiveHouseLevel()
+{
+    if (effectHandleMode != SPELL_EFFECT_HANDLE_HIT_TARGET)
+        return;
+
+    Player* player = Object::ToPlayer(unitTarget);
+    if (!player)
+        return;
+
+    Housing* housing = player->GetHousing();
+    if (!housing)
+        return;
+
+    uint32 levelsToAdd = std::max(damage, 1);
+
+    TC_LOG_DEBUG("spells", "Spell::EffectGiveHouseLevel: Adding {} level(s) to house for player {} (house {}, current level {})",
+        levelsToAdd, player->GetName(), housing->GetHouseGuid().ToString(), housing->GetLevel());
+
+    housing->AddLevel(levelsToAdd);
+}
+
+void Spell::EffectCollectHousingDecor()
+{
+    if (effectHandleMode != SPELL_EFFECT_HANDLE_HIT_TARGET)
+        return;
+
+    Player* player = Object::ToPlayer(unitTarget);
+    if (!player)
+        return;
+
+    Housing* housing = player->GetHousing();
+    if (!housing)
+        return;
+
+    uint32 decorEntryId = effectInfo->MiscValue;
+    if (!decorEntryId)
+        return;
+
+    HouseDecorData const* decorData = sHousingMgr.GetHouseDecorData(decorEntryId);
+    if (!decorData)
+    {
+        TC_LOG_ERROR("spells", "Spell::EffectCollectHousingDecor: Invalid HouseDecor ID {} from spell {}",
+            decorEntryId, m_spellInfo->Id);
+        return;
+    }
+
+    HousingResult result = housing->AddToCatalog(decorEntryId, DECOR_SOURCE_SPELL,
+        std::to_string(m_spellInfo->Id));
+
+    if (result != HOUSING_RESULT_SUCCESS)
+    {
+        TC_LOG_ERROR("spells", "Spell::EffectCollectHousingDecor: AddToCatalog failed (result={}) for decor {} spell {}",
+            uint32(result), decorEntryId, m_spellInfo->Id);
+        return;
+    }
+
+    // Notify client of the new decor acquisition
+    WorldPackets::Housing::HousingFirstTimeDecorAcquisition decorAcq;
+    decorAcq.DecorEntryID = decorEntryId;
+    player->SendDirectMessage(decorAcq.Write());
+
+    // If the Account entity's FHousingStorage_C has already been populated (player opened
+    // edit mode), add the new catalog entry directly and send a VALUES_UPDATE so the client's
+    // decor list refreshes without requiring a relog or mode toggle.
+    if (housing->IsStoragePopulated())
+    {
+        Housing::CatalogEntry const* catEntry = nullptr;
+        for (Housing::CatalogEntry const* entry : housing->GetCatalogEntries())
+        {
+            if (entry->DecorEntryId == decorEntryId)
+            {
+                catEntry = entry;
+                break;
+            }
+        }
+        if (catEntry)
+        {
+            // Generate a unique GUID for the new storage entry (same scheme as PopulateCatalogStorageEntries)
+            uint64 catalogGuidBase = player->GetGUID().GetCounter() * 100000;
+            uint32 storageIdx = catEntry->Count > 0 ? catEntry->Count - 1 : 0;
+            uint64 uniqueId = catalogGuidBase + decorEntryId * 100 + storageIdx;
+            ObjectGuid catalogDecorGuid = ObjectGuid::Create<HighGuid::Housing>(
+                /*subType*/ 1,
+                /*arg1*/ sRealmList->GetCurrentRealmId().Realm,
+                /*arg2*/ decorEntryId,
+                uniqueId);
+
+            Battlenet::Account& account = player->GetSession()->GetBattlenetAccount();
+            account.SetHousingDecorStorageEntry(catalogDecorGuid, ObjectGuid::Empty,
+                catEntry->SourceType, catEntry->SourceValue);
+            account.SendUpdateToPlayer(player);
+        }
+    }
+
+    TC_LOG_DEBUG("spells", "Spell::EffectCollectHousingDecor: Player {} learned decor '{}' (ID: {}) from spell {}",
+        player->GetName(), decorData->Name, decorEntryId, m_spellInfo->Id);
+}
+
+void Spell::EffectLearnHouseRoom()
+{
+    if (effectHandleMode != SPELL_EFFECT_HANDLE_HIT_TARGET)
+        return;
+
+    Player* player = Object::ToPlayer(unitTarget);
+    if (!player)
+        return;
+
+    Housing* housing = player->GetHousing();
+    if (!housing)
+        return;
+
+    uint32 houseRoomId = effectInfo->MiscValue;
+    if (!houseRoomId)
+        return;
+
+    HouseRoomData const* roomData = sHousingMgr.GetHouseRoomData(houseRoomId);
+    if (!roomData)
+    {
+        TC_LOG_ERROR("spells", "Spell::EffectLearnHouseRoom: Invalid HouseRoom ID {} from spell {}",
+            houseRoomId, m_spellInfo->Id);
+        return;
+    }
+
+    TC_LOG_DEBUG("spells", "Spell::EffectLearnHouseRoom: Player {} learned house room '{}' (ID: {})",
+        player->GetName(), roomData->Name, houseRoomId);
+
+    // Send collection update to the client
+    WorldPackets::Housing::AccountRoomCollectionUpdate collectionUpdate;
+    collectionUpdate.RoomID = houseRoomId;
+    player->SendDirectMessage(collectionUpdate.Write());
+}
+
+void Spell::EffectLearnHouseExteriorComponent()
+{
+    if (effectHandleMode != SPELL_EFFECT_HANDLE_HIT_TARGET)
+        return;
+
+    Player* player = Object::ToPlayer(unitTarget);
+    if (!player)
+        return;
+
+    Housing* housing = player->GetHousing();
+    if (!housing)
+        return;
+
+    uint32 exteriorComponentId = effectInfo->MiscValue;
+    if (!exteriorComponentId)
+        return;
+
+    TC_LOG_DEBUG("spells", "Spell::EffectLearnHouseExteriorComponent: Player {} learned exterior component ID {} from spell {}",
+        player->GetName(), exteriorComponentId, m_spellInfo->Id);
+
+    // Send collection update to the client
+    WorldPackets::Housing::AccountExteriorFixtureCollectionUpdate collectionUpdate;
+    collectionUpdate.FixtureID = exteriorComponentId;
+    player->SendDirectMessage(collectionUpdate.Write());
+}
+
+void Spell::EffectLearnHouseTheme()
+{
+    if (effectHandleMode != SPELL_EFFECT_HANDLE_HIT_TARGET)
+        return;
+
+    Player* player = Object::ToPlayer(unitTarget);
+    if (!player)
+        return;
+
+    Housing* housing = player->GetHousing();
+    if (!housing)
+        return;
+
+    uint32 houseThemeId = effectInfo->MiscValue;
+    if (!houseThemeId)
+        return;
+
+    HouseThemeData const* themeData = sHousingMgr.GetHouseThemeData(houseThemeId);
+    if (!themeData)
+    {
+        TC_LOG_ERROR("spells", "Spell::EffectLearnHouseTheme: Invalid HouseTheme ID {} from spell {}",
+            houseThemeId, m_spellInfo->Id);
+        return;
+    }
+
+    TC_LOG_DEBUG("spells", "Spell::EffectLearnHouseTheme: Player {} learned house theme '{}' (ID: {})",
+        player->GetName(), themeData->Name, houseThemeId);
+
+    // Send collection update to the client
+    WorldPackets::Housing::AccountRoomThemeCollectionUpdate collectionUpdate;
+    collectionUpdate.ThemeID = houseThemeId;
+    player->SendDirectMessage(collectionUpdate.Write());
+}
+
+void Spell::EffectLearnHouseRoomComponentTexture()
+{
+    if (effectHandleMode != SPELL_EFFECT_HANDLE_HIT_TARGET)
+        return;
+
+    Player* player = Object::ToPlayer(unitTarget);
+    if (!player)
+        return;
+
+    Housing* housing = player->GetHousing();
+    if (!housing)
+        return;
+
+    uint32 textureId = effectInfo->MiscValue;
+    if (!textureId)
+        return;
+
+    TC_LOG_DEBUG("spells", "Spell::EffectLearnHouseRoomComponentTexture: Player {} learned room component texture ID {} from spell {}",
+        player->GetName(), textureId, m_spellInfo->Id);
+
+    // Send collection update to the client (texture = material in the collection system)
+    WorldPackets::Housing::AccountRoomMaterialCollectionUpdate collectionUpdate;
+    collectionUpdate.MaterialID = textureId;
+    player->SendDirectMessage(collectionUpdate.Write());
+}
+
+void Spell::EffectSetNeighborhoodInitiative()
+{
+    if (effectHandleMode != SPELL_EFFECT_HANDLE_HIT_TARGET)
+        return;
+
+    Player* player = Object::ToPlayer(unitTarget);
+    if (!player)
+        return;
+
+    Housing* housing = player->GetHousing();
+    if (!housing)
+        return;
+
+    uint32 initiativeId = effectInfo->MiscValue;
+    if (!initiativeId)
+        return;
+
+    NeighborhoodInitiativeData const* initiativeData = sHousingMgr.GetNeighborhoodInitiativeData(initiativeId);
+    if (!initiativeData)
+    {
+        TC_LOG_ERROR("spells", "Spell::EffectSetNeighborhoodInitiative: Invalid NeighborhoodInitiative ID {} from spell {}",
+            initiativeId, m_spellInfo->Id);
+        return;
+    }
+
+    // Resolve the player's neighborhood
+    ObjectGuid neighborhoodGuid = housing->GetNeighborhoodGuid();
+    Neighborhood* neighborhood = sNeighborhoodMgr.GetNeighborhood(neighborhoodGuid);
+    if (!neighborhood)
+    {
+        TC_LOG_ERROR("spells", "Spell::EffectSetNeighborhoodInitiative: Player {} has no valid neighborhood (guid: {})",
+            player->GetName(), neighborhoodGuid.ToString());
+        return;
+    }
+
+    // Only the neighborhood owner or managers should be able to set initiatives
+    if (!neighborhood->IsOwner(player->GetGUID()) && !neighborhood->IsManager(player->GetGUID()))
+    {
+        TC_LOG_DEBUG("spells", "Spell::EffectSetNeighborhoodInitiative: Player {} is not owner/manager of neighborhood {}",
+            player->GetName(), neighborhoodGuid.ToString());
+        return;
+    }
+
+    TC_LOG_DEBUG("spells", "Spell::EffectSetNeighborhoodInitiative: Player {} set initiative '{}' (ID: {}) on neighborhood {}",
+        player->GetName(), initiativeData->Name, initiativeId, neighborhoodGuid.ToString());
+}
+
