@@ -551,7 +551,7 @@ class spell_monk_roll : public SpellScript
     void HandleDummy(SpellEffIndex /*effIndex*/)
     {
         GetCaster()->CastSpell(GetCaster(), GetCaster()->HasUnitMovementFlag(MOVEMENTFLAG_BACKWARD) ? SPELL_MONK_ROLL_BACKWARD : SPELL_MONK_ROLL_FORWARD,
-            TRIGGERED_IGNORE_CAST_IN_PROGRESS);
+            true);
         GetCaster()->CastSpell(GetCaster(), SPELL_MONK_NO_FEATHER_FALL, true);
     }
 
