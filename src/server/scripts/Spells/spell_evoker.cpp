@@ -102,7 +102,7 @@ class spell_evo_azure_strike : public SpellScript
     void FilterTargets(std::list<WorldObject*>& targets)
     {
         targets.remove(GetExplTargetUnit());
-        Trinity::Containers::RandomResize(targets, GetEffectInfo(EFFECT_0).CalcValue(GetCaster()) - 1);
+        Trinity::Containers::RandomResize(targets, GetEffectInfo(EFFECT_0).CalcValueAsInt(GetCaster()) - 1);
         targets.push_back(GetExplTargetUnit());
     }
 
@@ -173,7 +173,7 @@ class spell_evo_burnout : public AuraScript
 
     static bool CheckProc(AuraScript const&, AuraEffect const* aurEff, ProcEventInfo const& /*eventInfo*/)
     {
-        return roll_chance_i(aurEff->GetAmount());
+        return roll_chance_f(aurEff->GetAmount());
     }
 
     static void HandleProc(AuraScript const&, AuraEffect const* /*aurEff*/, ProcEventInfo const& eventInfo)
@@ -234,7 +234,7 @@ class spell_evo_causality_disintegrate : public AuraScript
     {
         if (AuraEffect const* causality = GetCaster()->GetAuraEffect(SPELL_EVOKER_CAUSALITY, EFFECT_0))
             for (uint32 spell : CausalityAffectedEmpowerSpells)
-                GetCaster()->GetSpellHistory()->ModifyCooldown(spell, Milliseconds(causality->GetAmount()));
+                GetCaster()->GetSpellHistory()->ModifyCooldown(spell, Milliseconds(causality->GetAmountAsInt()));
     }
 
     void Register() override
@@ -264,7 +264,7 @@ class spell_evo_causality_pyre : public SpellScript
         if (!causality)
             return;
 
-        Milliseconds cooldownReduction = Milliseconds(std::min(GetUnitTargetCountForEffect(EFFECT_0), TargetLimit) * causality->GetAmount());
+        Milliseconds cooldownReduction = Milliseconds(std::min(GetUnitTargetCountForEffect(EFFECT_0), TargetLimit) * causality->GetAmountAsInt());
         for (uint32 spell : CausalityAffectedEmpowerSpells)
             GetCaster()->GetSpellHistory()->ModifyCooldown(spell, cooldownReduction);
     }
@@ -312,7 +312,7 @@ class spell_evo_emerald_blossom_heal : public SpellScript
 
     void FilterTargets(std::list<WorldObject*>& targets) const
     {
-        uint32 const maxTargets = uint32(GetSpellInfo()->GetEffect(EFFECT_1).CalcValue(GetCaster()));
+        uint32 const maxTargets = uint32(GetSpellInfo()->GetEffect(EFFECT_1).CalcValueAsInt(GetCaster()));
         Trinity::SelectRandomInjuredTargets(targets, maxTargets, true);
     }
 
@@ -337,7 +337,7 @@ public:
     bool Load() override
     {
         AuraEffect const* aurEff = GetCaster()->GetAuraEffect(_talentAuraId, EFFECT_0);
-        return aurEff && roll_chance_i(aurEff->GetAmount());
+        return aurEff && roll_chance_f(aurEff->GetAmount());
     }
 
     void HandleEssenceBurst() const
@@ -373,7 +373,7 @@ public:
 
     void OnComplete(int32 completedStageCount) const
     {
-        int32 dotTicks = 10 - (completedStageCount - 1) * 3;
+        SpellEffectValue dotTicks = 10 - (completedStageCount - 1) * 3;
         if (AuraEffect const* blastFurnace = GetCaster()->GetAuraEffect(SPELL_EVOKER_BLAST_FURNACE, EFFECT_0))
             dotTicks += blastFurnace->GetAmount() / 2;
 
