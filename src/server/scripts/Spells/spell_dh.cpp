@@ -2763,7 +2763,7 @@ class spell_dh_fel_rush_dash_aura : public AuraScript
                 });
     }
 
-    void CalcSpeed(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalcSpeed(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         amount = 1250;
         RefreshDuration();
@@ -2802,7 +2802,7 @@ class spell_dh_fel_rush_dash_ground : public AuraScript
         }
     }
 
-    void CalcSpeed(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalcSpeed(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         amount = 1250;
         RefreshDuration();
@@ -3409,7 +3409,7 @@ class spell_dh_razor_spikes : public AuraScript
 // Soul Barrier - 263648
 class spell_dh_soul_barrier : public AuraScript
 {
-    void CalcAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalcAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         Unit* caster = GetCaster();
         if (!caster)
@@ -4040,7 +4040,7 @@ class spell_dh_consume_soul_missile : public SpellScript
 class spell_dh_darkness_absorb : public AuraScript
 {
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         amount = -1;
     }
@@ -4344,7 +4344,9 @@ public:
 
             caster->GetScheduler().Schedule(1750ms, [caster](TaskContext /*context*/)
                 {
-                    caster->CastSpell(caster, SPELL_DK_RAIN_FROM_ABOVE_SLOWFALL, SPELLVALUE_BASE_POINT0);
+                    //SPELLVALUE_BASE_POINT0
+
+                    caster->CastSpell(caster, SPELL_DK_RAIN_FROM_ABOVE_SLOWFALL, true);
                 });
         }
 

@@ -5547,7 +5547,7 @@ class spell_pri_penance_620 : public SpellScript
 
 class spell_pri_penance_620_aura : public AuraScript
 {
-    void HandleEffectCalcAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void HandleEffectCalcAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         Unit* caster = GetCaster();
         if (!caster || !caster->IsPlayer())
@@ -5581,7 +5581,7 @@ class spell_pri_luminous_barrier : public AuraScript
 {
     int32 baseAbsorbAmount = 0;
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         if (Unit* caster = GetCaster())
         {

@@ -2735,7 +2735,7 @@ class aura_warr_ignore_pain : public AuraScript
         return true;
     }
 
-    void CalcAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalcAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         if (Unit* caster = GetCaster())
         {
@@ -3017,7 +3017,7 @@ class spell_warr_whirlwind : public SpellScript
 // Unshackled Fury - 76856
 class spell_warr_unshackled_fury : public AuraScript
 {
-    void CalculateAmount(const AuraEffect* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(const AuraEffect* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         if (Unit* caster = GetCaster())
             if (!caster->HasAuraState(AURA_STATE_ENRAGED))

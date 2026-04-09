@@ -1040,7 +1040,7 @@ public:
             return GetCaster() && GetCaster()->GetTypeId() == TYPEID_PLAYER;
         }
 
-        void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+        void CalculateAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
         {
             if (!GetCaster())
                 return;
@@ -1263,7 +1263,7 @@ public:
             return GetUnitOwner()->ToPlayer();
         }
 
-        void CalculateAmount(AuraEffect const* /*auraEffect*/, int32& amount, bool& /*canBeRecalculated*/)
+        void CalculateAmount(AuraEffect const* /*auraEffect*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
         {
             amount = -1;
         }
@@ -2118,7 +2118,7 @@ class spell_monk_renewing_mist_hot : public AuraScript
             caster->CastSpell(GetTarget(), SPELL_MONK_RENEWING_MIST_JUMP, true);
     }
 
-    void CalcAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalcAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         Unit* caster = GetCaster();
         if (Aura* counteractAura = caster->GetAura(SPELL_MONK_COUNTERACT_MAGIC))
@@ -2474,7 +2474,7 @@ public:
 
     class spell_monk_touch_of_karma_AuraScript : public AuraScript
     {
-        void CalculateAmount(const AuraEffect* aurEff, int32& amount, bool& /*canBeRecalculated*/)
+        void CalculateAmount(const AuraEffect* aurEff, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
         {
             if (Unit* caster = GetCaster())
                 if (int32 effInfo = GetAura()->GetSpellInfo()->GetEffect(EFFECT_2).CalcValue())

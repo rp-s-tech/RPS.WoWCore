@@ -1577,7 +1577,7 @@ public:
     class spell_dk_icebound_fortitude_AuraScript : public AuraScript
     {
 
-        void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+        void CalculateAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
         {
             if (GetUnitOwner()->HasAura(SPELL_DK_IMPROVED_BLOOD_PRESENCE))
                 amount += 30; /// todo, figure out how tooltip is updated

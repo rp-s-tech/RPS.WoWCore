@@ -2116,7 +2116,7 @@ class spell_warl_drain_life : public AuraScript
         return _caster != nullptr;
     }
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         if (!_caster)
             return;

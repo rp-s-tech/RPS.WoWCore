@@ -1598,7 +1598,7 @@ class spell_pal_shield_of_the_righteous : public SpellScript
 
                 if (Aura* aura = player->GetAura(SPELL_PALADIN_RIGHTEOUS_PROTECTOR)) //reduce the CD of Light of the Protector and Avenging Wrath by 3
                 {
-                    uint32 cooldownReduction = aura->GetEffect(EFFECT_0)->GetBaseAmount() * IN_MILLISECONDS;
+                    uint32 cooldownReduction = aura->GetEffect(EFFECT_0)->GetBaseAmount() * int32(IN_MILLISECONDS);
 
                     if (player->HasSpell(SPELL_PALADIN_LIGHT_OF_THE_PROTECTOR))
                         if (SpellInfo const* spellInfo = sSpellMgr->GetSpellInfo(SPELL_PALADIN_LIGHT_OF_THE_PROTECTOR, DIFFICULTY_NONE))
@@ -1899,7 +1899,7 @@ class spell_pal_holy_shield : public AuraScript
         return false;
     }
 
-    void CalculateAmount(AuraEffect const* /*aurEff*/, int32& amount, bool& /*canBeRecalculated*/)
+    void CalculateAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         // Disable absorb (shitty blizzard)
         amount = 0;
