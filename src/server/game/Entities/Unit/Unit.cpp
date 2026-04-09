@@ -5137,7 +5137,7 @@ float Unit::GetTotalAuraPercent(AuraType auraType, std::function<bool(AuraEffect
     if (mTotalAuraList.empty())
         return 1.0f;
 
-    std::map<SpellGroup, int32> sameEffectSpellGroup;
+    std::map<SpellGroup, SpellEffectValue> sameEffectSpellGroup;
     float multiplier = 1.0f;
 
     for (AuraEffect const* aurEff : mTotalAuraList)
@@ -5146,7 +5146,7 @@ float Unit::GetTotalAuraPercent(AuraType auraType, std::function<bool(AuraEffect
         {
             // Check if the Aura Effect has a the Same Effect Stack Rule and if so, use the highest amount of that SpellGroup
             // If the Aura Effect does not have this Stack Rule, it returns false so we can add to the multiplier as usual
-            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), static_cast<uint32>(auraType), aurEff->GetAmount(), sameEffectSpellGroup))
+            if (!sSpellMgr->AddSameEffectStackRuleSpellGroups(aurEff->GetSpellInfo(), auraType, aurEff->GetAmount(), sameEffectSpellGroup))
                 ApplyPct(multiplier, aurEff->GetAmount());
         }
     }
