@@ -1699,6 +1699,7 @@ void WorldSession::SendFeatureSystemStatus()
     features.CommunitiesEnabled = true;
     features.BnetGroupsEnabled = false;
     features.CharacterCommunitiesEnabled = false;
+    features.ClubFinderEnabled = true;
     features.ClubPresenceAllowSubscribeAll = true;
     features.ClubPresenceUnsubscribeDelay = 60000;
 

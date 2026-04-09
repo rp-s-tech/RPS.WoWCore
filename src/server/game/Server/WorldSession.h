@@ -321,6 +321,20 @@ namespace WorldPackets
         class UpdateAADCStatus;
     }
 
+    namespace ClubFinder
+    {
+        class RequestPendingClubsList;
+        class RequestClubsData;
+        class RequestSubscribedClubPostingIDs;
+        class ApplicationResponse;
+        class ClubFinderPost;
+        class RequestClubsList;
+        class RequestMembershipToClub;
+        class GetApplicantsList;
+        class RespondToApplicant;
+        class WhisperApplicantRequest;
+    }
+
     namespace Collections
     {
         class CollectionItemSetFavorite;
@@ -1475,6 +1489,18 @@ class TC_GAME_API WorldSession
         void HandleGuildRequestPartyState(WorldPackets::Guild::RequestGuildPartyState& packet);
         void HandleGuildChallengeUpdateRequest(WorldPackets::Guild::GuildChallengeUpdateRequest& packet);
         void HandleDeclineGuildInvites(WorldPackets::Guild::DeclineGuildInvites& packet);
+
+        // Club Finder
+        void HandleClubFinderRequestPendingClubsList(WorldPackets::ClubFinder::RequestPendingClubsList& packet);
+        void HandleClubFinderRequestClubsData(WorldPackets::ClubFinder::RequestClubsData& packet);
+        void HandleClubFinderRequestSubscribedClubPostingIDs(WorldPackets::ClubFinder::RequestSubscribedClubPostingIDs& packet);
+        void HandleClubFinderApplicationResponse(WorldPackets::ClubFinder::ApplicationResponse& packet);
+        void HandleClubFinderPost(WorldPackets::ClubFinder::ClubFinderPost& packet);
+        void HandleClubFinderRequestClubsList(WorldPackets::ClubFinder::RequestClubsList& packet);
+        void HandleClubFinderRequestMembershipToClub(WorldPackets::ClubFinder::RequestMembershipToClub& packet);
+        void HandleClubFinderGetApplicantsList(WorldPackets::ClubFinder::GetApplicantsList& packet);
+        void HandleClubFinderRespondToApplicant(WorldPackets::ClubFinder::RespondToApplicant& packet);
+        void HandleClubFinderWhisperApplicantRequest(WorldPackets::ClubFinder::WhisperApplicantRequest& packet);
 
         void HandleDeclineNeighborhoodInvites(WorldPackets::Housing::DeclineNeighborhoodInvites const& declineNeighborhoodInvites);
 

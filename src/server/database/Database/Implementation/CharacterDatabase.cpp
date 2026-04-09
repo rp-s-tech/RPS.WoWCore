@@ -823,6 +823,17 @@ void CharacterDatabaseConnection::DoPrepareStatements()
     PrepareStatement(CHAR_SEL_CHARACTER_BANK_TAB_SETTINGS, "SELECT tabId, name, icon, description, depositFlags FROM character_bank_tab_settings WHERE characterGuid = ?", CONNECTION_ASYNC);
     PrepareStatement(CHAR_DEL_CHARACTER_BANK_TAB_SETTINGS, "DELETE FROM character_bank_tab_settings WHERE characterGuid = ?", CONNECTION_ASYNC);
     PrepareStatement(CHAR_INS_CHARACTER_BANK_TAB_SETTINGS, "INSERT INTO character_bank_tab_settings (characterGuid, tabId, name, icon, description, depositFlags) VALUES (?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
+
+    // Club Finder
+    PrepareStatement(CHAR_SEL_CLUB_FINDER_POSTS, "SELECT postingID, guildID, description, playstyle, interests, specIDs, classMask, minLevel, maxLevel, slotsAvailable, maxApplicants, language, status, timestamp FROM club_finder_post", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_SEL_CLUB_FINDER_APPLICANTS, "SELECT id, postingID, playerGUID, status, comment, timestamp FROM club_finder_applicant", CONNECTION_SYNCH);
+    PrepareStatement(CHAR_INS_CLUB_FINDER_POST, "INSERT INTO club_finder_post (guildID, description, playstyle, interests, classMask, minLevel, maxLevel, timestamp) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_UPD_CLUB_FINDER_POST, "UPDATE club_finder_post SET description = ?, playstyle = ?, interests = ?, classMask = ?, minLevel = ?, maxLevel = ? WHERE postingID = ?", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_DEL_CLUB_FINDER_POST, "DELETE FROM club_finder_post WHERE postingID = ?", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_INS_CLUB_FINDER_APPLICANT, "INSERT INTO club_finder_applicant (postingID, playerGUID, comment, timestamp) VALUES (?, ?, ?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_UPD_CLUB_FINDER_APPLICANT_STATUS, "UPDATE club_finder_applicant SET status = ? WHERE id = ?", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_DEL_CLUB_FINDER_APPLICANT, "DELETE FROM club_finder_applicant WHERE id = ?", CONNECTION_ASYNC);
+    PrepareStatement(CHAR_DEL_CLUB_FINDER_APPLICANTS_BY_POSTING, "DELETE FROM club_finder_applicant WHERE postingID = ?", CONNECTION_ASYNC);
 }
 
 CharacterDatabaseConnection::CharacterDatabaseConnection(MySQLConnectionInfo& connInfo, ConnectionFlags connectionFlags) : MySQLConnection(connInfo, connectionFlags)

@@ -40,6 +40,7 @@
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "ChatPackets.h"
+#include "ClubFinderMgr.h"
 #include "Config.h"
 #include "Containers.h"
 #include "ConversationDataStore.h"
@@ -1829,6 +1830,9 @@ bool World::SetInitialWorldSettings()
 
     TC_LOG_INFO("server.loading", "Loading Guilds...");
     sGuildMgr->LoadGuilds();
+
+    TC_LOG_INFO("server.loading", "Loading Club Finder data...");
+    sClubFinderMgr->LoadFromDB();
 
     TC_LOG_INFO("server.loading", "Loading ArenaTeams...");
     sArenaTeamMgr->LoadArenaTeams();
