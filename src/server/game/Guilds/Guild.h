@@ -49,6 +49,11 @@ namespace WorldPackets
     }
 }
 
+enum GuildFlags
+{
+    GUILD_FLAG_RENAME                   = 0x01
+};
+
 enum GuildMisc
 {
     GUILD_BANK_MAX_TABS                 = 8,                    // send by client for money log also
@@ -761,6 +766,7 @@ class TC_GAME_API Guild
         uint64 GetBankMoney() const { return m_bankMoney; }
 
         bool SetName(std::string_view name);
+        void SetRename(bool apply);
 
         // Handle client commands
         void HandleRoster(WorldSession* session);
@@ -881,6 +887,7 @@ class TC_GAME_API Guild
     protected:
         ObjectGuid::LowType m_id;
         std::string m_name;
+        uint32 m_flags;
         ObjectGuid m_leaderGuid;
         std::string m_motd;
         std::string m_info;

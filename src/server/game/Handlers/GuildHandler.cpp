@@ -76,6 +76,28 @@ void WorldSession::HandleGuildDeclineInvitation(WorldPackets::Guild::GuildDeclin
     GetPlayer()->SetGuildIdInvited(UI64LIT(0));
 }
 
+void WorldSession::HandleGuildChangeNameRequest(WorldPackets::Guild::GuildChangeNameRequest& packet)
+{
+    if (Guild* guild = GetPlayer()->GetGuild())
+    {
+        if (guild->GetLeaderGUID() != _player->GetGUID())
+            return;
+
+        bool success = true;
+        if (guild->GetName() == packet.NewName)
+            success = false;
+
+        WorldPackets::Guild::GuildChangeNameResult result;
+        result.Success = success;
+        SendPacket(result.Write());
+
+        if (success) {
+            guild->SetName(packet.NewName);
+            guild->SetRename(false);
+        }
+    }
+}
+
 void WorldSession::HandleGuildGetRoster(WorldPackets::Guild::GuildGetRoster& /*packet*/)
 {
     if (Guild* guild = GetPlayer()->GetGuild())

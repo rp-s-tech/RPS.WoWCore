@@ -383,6 +383,7 @@ namespace WorldPackets
         class AcceptGuildInvite;
         class DeclineGuildInvites;
         class GuildDeclineInvitation;
+        class GuildChangeNameRequest;
         class GuildGetRoster;
         class GuildPromoteMember;
         class GuildDemoteMember;
@@ -1463,6 +1464,7 @@ class TC_GAME_API WorldSession
         void HandleGuildOfficerRemoveMember(WorldPackets::Guild::GuildOfficerRemoveMember& packet);
         void HandleGuildAcceptInvite(WorldPackets::Guild::AcceptGuildInvite& invite);
         void HandleGuildDeclineInvitation(WorldPackets::Guild::GuildDeclineInvitation& decline);
+        void HandleGuildChangeNameRequest(WorldPackets::Guild::GuildChangeNameRequest& packet);
         void HandleGuildEventLogQuery(WorldPackets::Guild::GuildEventLogQuery& packet);
         void HandleGuildGetRoster(WorldPackets::Guild::GuildGetRoster& packet);
         void HandleRequestGuildRewardsList(WorldPackets::Guild::RequestGuildRewardsList& packet);
