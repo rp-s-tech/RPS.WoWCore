@@ -77,7 +77,19 @@ void ChatPacketSender::operator()(Player const* player) const
     if (EmotePacket)
         player->SendDirectMessage(EmotePacket->GetRawPacket());
 
-    std::string finalText = CreatureTextMgr::ReplaceGenderTokens(Text, player->GetGender());
+    std::string finalText;
+    uint8 targetGender = GENDER_MALE;
+    if (Receiver)
+    {
+        if (Unit const* receiverUnit = Receiver->ToUnit())
+            targetGender = receiverUnit->GetGender();
+        else
+            targetGender = player->GetGender();
+    }
+    else
+        targetGender = player->GetGender();
+
+    finalText = CreatureTextMgr::ReplaceGenderTokens(Text, targetGender);
     bool useCachedPacket = (finalText == Text);
 
     if (Language == LANG_UNIVERSAL || Language == LANG_ADDON || Language == LANG_ADDON_LOGGED || player->CanUnderstandLanguage(Language))
