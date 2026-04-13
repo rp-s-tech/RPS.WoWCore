@@ -91,6 +91,7 @@
 #include "WorldPacket.h"
 #include "WorldSession.h"
 #include "GroupMgr.h"
+#include "TransmogMgr.h"
 
 NonDefaultConstructible<SpellEffectHandlerFn> SpellEffectHandlers[TOTAL_SPELL_EFFECTS] =
 {
@@ -6448,7 +6449,119 @@ void Spell::EffectEquipTransmogOutfit()
             break;
     }
 
-    target->EquipTransmogOutfit(m_misc.EquipTransmogOutfit.TransmogOutfitId, static_cast<TransmogSituationTrigger>(m_misc.EquipTransmogOutfit.SituationTrigger), locked);
+    uint32 outfitId = m_misc.EquipTransmogOutfit.TransmogOutfitId;
+    target->EquipTransmogOutfit(outfitId, static_cast<TransmogSituationTrigger>(m_misc.EquipTransmogOutfit.SituationTrigger), locked);
+
+    if (UF::TransmogOutfitData const* transmogOutfit = target->m_activePlayerData->TransmogOutfits.Get(outfitId))
+    {
+        auto isTransmogDisplayed = [](TransmogOutfitDisplayType dt)
+        {
+            return dt == TransmogOutfitDisplayType::Assigned || dt == TransmogOutfitDisplayType::Hidden;
+        };
+
+        UF::TransmogOutfitData const* viewedOutfit = &*target->m_activePlayerData->ViewedOutfit;
+        auto allSlots = TransmogMgr::GetAllSlots();
+
+        auto getEquipSlot = [&](size_t i) -> int32
+        {
+            auto const& slot = allSlots[i].Slot;
+            if (!slot->HasFlag(TransmogOutfitSlotFlags::IsSecondarySlot))
+                return slot->InventorySlotEnum;
+            for (size_t j = 0; j < allSlots.size(); ++j)
+                if (!allSlots[j].Slot->HasFlag(TransmogOutfitSlotFlags::IsSecondarySlot)
+                    && allSlots[j].Slot->SecondarySlotID == static_cast<int32>(slot->ID))
+                    return allSlots[j].Slot->InventorySlotEnum;
+            return -1;
+        };
+
+        struct ItemModChanges { int32 primary = 0, secondary = 0, illusion = 0; };
+        std::unordered_map<int32, ItemModChanges> changesBySlot;
+
+        for (size_t i = 0; i < allSlots.size() && i < viewedOutfit->Slots.size(); ++i)
+        {
+            bool isSecondary = allSlots[i].Slot->HasFlag(TransmogOutfitSlotFlags::IsSecondarySlot);
+            int32 equipSlot = getEquipSlot(i);
+            if (equipSlot < 0 || equipSlot >= EQUIPMENT_SLOT_END)
+                continue;
+
+            UF::TransmogOutfitSlotData const& os = viewedOutfit->Slots[i];
+            if (!isTransmogDisplayed(static_cast<TransmogOutfitDisplayType>(*os.AppearanceDisplayType)))
+                continue;
+
+            int32 appearanceId = os.ItemModifiedAppearanceID;
+            if (!appearanceId || !sItemModifiedAppearanceStore.LookupEntry(appearanceId))
+                continue;
+
+            ItemModChanges& ch = changesBySlot[equipSlot];
+            if (isSecondary)
+                ch.secondary = appearanceId;
+            else
+            {
+                ch.primary = appearanceId;
+                if (isTransmogDisplayed(static_cast<TransmogOutfitDisplayType>(*os.IllusionDisplayType)) && os.SpellItemEnchantmentID)
+                    ch.illusion = os.SpellItemEnchantmentID;
+            }
+        }
+
+        for (auto& [equipSlot, ch] : changesBySlot)
+        {
+            Item* item = target->GetItemByPos(INVENTORY_SLOT_BAG_0, equipSlot);
+            if (!item)
+                continue;
+
+            struct { ItemModifier mod; int32 val; } mods[] =
+            {
+                { ITEM_MODIFIER_TRANSMOG_APPEARANCE_ALL_SPECS, ch.primary },
+                { ITEM_MODIFIER_TRANSMOG_SECONDARY_APPEARANCE_ALL_SPECS, ch.secondary },
+                { ITEM_MODIFIER_ENCHANT_ILLUSION_ALL_SPECS, ch.illusion }
+            };
+
+            bool changed = false;
+            for (auto& m : mods)
+                if (m.val)
+                {
+                    item->SetModifier(m.mod, m.val);
+                    changed = true;
+                }
+
+            if (changed)
+            {
+                item->SetState(ITEM_CHANGED, target);
+                target->SetVisibleItemSlot(equipSlot, item);
+            }
+        }
+    }
+    else
+    {
+        static constexpr ItemModifier transmogClearMods[] =
+        {
+            ITEM_MODIFIER_TRANSMOG_APPEARANCE_ALL_SPECS,
+            ITEM_MODIFIER_TRANSMOG_APPEARANCE_SPEC_1, ITEM_MODIFIER_TRANSMOG_APPEARANCE_SPEC_2,
+            ITEM_MODIFIER_TRANSMOG_APPEARANCE_SPEC_3, ITEM_MODIFIER_TRANSMOG_APPEARANCE_SPEC_4,
+            ITEM_MODIFIER_TRANSMOG_APPEARANCE_SPEC_5,
+            ITEM_MODIFIER_ENCHANT_ILLUSION_ALL_SPECS,
+            ITEM_MODIFIER_ENCHANT_ILLUSION_SPEC_1, ITEM_MODIFIER_ENCHANT_ILLUSION_SPEC_2,
+            ITEM_MODIFIER_ENCHANT_ILLUSION_SPEC_3, ITEM_MODIFIER_ENCHANT_ILLUSION_SPEC_4,
+            ITEM_MODIFIER_ENCHANT_ILLUSION_SPEC_5,
+            ITEM_MODIFIER_TRANSMOG_SECONDARY_APPEARANCE_ALL_SPECS,
+            ITEM_MODIFIER_TRANSMOG_SECONDARY_APPEARANCE_SPEC_1, ITEM_MODIFIER_TRANSMOG_SECONDARY_APPEARANCE_SPEC_2,
+            ITEM_MODIFIER_TRANSMOG_SECONDARY_APPEARANCE_SPEC_3, ITEM_MODIFIER_TRANSMOG_SECONDARY_APPEARANCE_SPEC_4,
+            ITEM_MODIFIER_TRANSMOG_SECONDARY_APPEARANCE_SPEC_5
+        };
+
+        for (uint8 equipSlot = EQUIPMENT_SLOT_START; equipSlot < EQUIPMENT_SLOT_END; ++equipSlot)
+        {
+            Item* item = target->GetItemByPos(INVENTORY_SLOT_BAG_0, equipSlot);
+            if (!item)
+                continue;
+
+            for (ItemModifier mod : transmogClearMods)
+                item->SetModifier(mod, 0);
+
+            item->SetState(ITEM_CHANGED, target);
+            target->SetVisibleItemSlot(equipSlot, item);
+        }
+    }
 }
 
 //NEW
