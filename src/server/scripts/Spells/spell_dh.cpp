@@ -6053,6 +6053,7 @@ class spell_dh_soul_immolation : public AuraScript
 class spell_first_in_last_out : public AuraScript
 {
     int32 _initialAbsorb = 0;
+    int32 _decayPerTick = 0;
 
     bool CheckProc(ProcEventInfo& eventInfo)
     {
@@ -6071,11 +6072,16 @@ class spell_first_in_last_out : public AuraScript
 
         _initialAbsorb = CalculatePct(caster->GetMaxHealth(), 6);
         amount = _initialAbsorb;
+
+        int32 duration = GetSpellInfo()->GetDuration();
+        int32 periodic = GetSpellInfo()->GetEffect(EFFECT_1).ApplyAuraPeriod;
+        if (periodic > 0 && duration > 0)
+            _decayPerTick = std::max<int32>(1, _initialAbsorb / (duration / periodic));
     }
 
     void HandlePeriodic(AuraEffect const* /*aurEff*/)
     {
-        if (_initialAbsorb <= 0)
+        if (_initialAbsorb <= 0 || _decayPerTick <= 0)
             return;
 
         Aura* aura = GetAura();
@@ -6090,9 +6096,7 @@ class spell_first_in_last_out : public AuraScript
         if (currentAmount <= 0)
             return;
 
-        int32 totalTicks = GetDuration() / 200;
-        int32 decayPerTick = std::max<int32>(1, _initialAbsorb / totalTicks);
-        int32 newAmount = std::max<int32>(0, currentAmount - decayPerTick);
+        int32 newAmount = std::max<int32>(0, currentAmount - _decayPerTick);
         absorbEff->SetAmount(newAmount);
 
         if (Unit* target = GetTarget())
