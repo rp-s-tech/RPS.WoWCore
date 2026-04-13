@@ -358,7 +358,8 @@ enum DemonHunterSpells
     SPELL_DH_DEVOURER_SPEC                         = 1213636,
     SPELL_DH_VENGEANCE_SPEC                        = 212613,
     SPELL_DH_HAVOC_SPEC                            = 212612,
-    SPELL_DH_ON_THE_EDGE                           = 1266619,
+    SPELL_DH_FIRST_IN_LAST_OUT                     = 1266619,
+    SPELL_DH_SHIFT                                 = 1234796,
 };
 
 enum DemonHunterSpellCategories
@@ -6053,6 +6054,15 @@ class spell_first_in_last_out : public AuraScript
 {
     int32 _initialAbsorb = 0;
 
+    bool CheckProc(ProcEventInfo& eventInfo)
+    {
+        if (eventInfo.GetSpellInfo()->Id == SPELL_DH_INFERNAL_STRIKE_CAST
+            || eventInfo.GetSpellInfo()->Id == SPELL_DH_FEL_RUSH
+            || eventInfo.GetSpellInfo()->Id == SPELL_DH_SHIFT)
+            return true;
+        return false;
+    }
+
     void CalcAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
     {
         Unit* caster = GetCaster();
@@ -6086,12 +6096,13 @@ class spell_first_in_last_out : public AuraScript
         absorbEff->SetAmount(newAmount);
 
         if (Unit* target = GetTarget())
-            if (AuraApplication* app = target->GetAuraApplication(SPELL_DH_ON_THE_EDGE))
+            if (AuraApplication* app = target->GetAuraApplication(SPELL_DH_FIRST_IN_LAST_OUT))
                 app->ClientUpdate();
     }
 
     void Register() override
     {
+        DoCheckProc += AuraCheckProcFn(spell_first_in_last_out::CheckProc);
         DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_first_in_last_out::CalcAmount, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB);
         OnEffectPeriodic += AuraEffectPeriodicFn(spell_first_in_last_out::HandlePeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
     }

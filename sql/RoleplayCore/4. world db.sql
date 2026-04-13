@@ -682,6 +682,7 @@ REPLACE INTO `areatrigger_scripts` VALUES (6482, 'at_demon_hunter_demonic_trampl
 
 REPLACE INTO `areatrigger_create_properties` VALUES (6482, 1, 11107, 1, 0, 0, 0, 0, 0, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 'at_demon_hunter_demonic_trample', 40120);
 REPLACE INTO `areatrigger_scripts` VALUES (1266619, 'spell_first_in_last_out');
+REPLACE INTO `areatrigger_scripts` VALUES (1266497, 'spell_first_in_last_out'); -- It is necessary to protect against false alarms and auras.
 
 -- ----------------------------
 -- Druid spell fixes
