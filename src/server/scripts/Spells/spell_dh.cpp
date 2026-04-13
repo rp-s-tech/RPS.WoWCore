@@ -358,6 +358,7 @@ enum DemonHunterSpells
     SPELL_DH_DEVOURER_SPEC                         = 1213636,
     SPELL_DH_VENGEANCE_SPEC                        = 212613,
     SPELL_DH_HAVOC_SPEC                            = 212612,
+    SPELL_DH_ON_THE_EDGE                           = 1266619,
 };
 
 enum DemonHunterSpellCategories
@@ -6047,6 +6048,55 @@ class spell_dh_soul_immolation : public AuraScript
     }
 };
 
+// 1266619 - First In, Last Out
+class spell_first_in_last_out : public AuraScript
+{
+    int32 _initialAbsorb = 0;
+
+    void CalcAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& amount, bool& /*canBeRecalculated*/)
+    {
+        Unit* caster = GetCaster();
+        if (!caster)
+            return;
+
+        _initialAbsorb = CalculatePct(caster->GetMaxHealth(), 6);
+        amount = _initialAbsorb;
+    }
+
+    void HandlePeriodic(AuraEffect const* /*aurEff*/)
+    {
+        if (_initialAbsorb <= 0)
+            return;
+
+        Aura* aura = GetAura();
+        if (!aura)
+            return;
+
+        AuraEffect* absorbEff = aura->GetEffect(EFFECT_0);
+        if (!absorbEff)
+            return;
+
+        int32 currentAmount = absorbEff->GetAmount();
+        if (currentAmount <= 0)
+            return;
+
+        int32 totalTicks = GetDuration() / 200;
+        int32 decayPerTick = std::max<int32>(1, _initialAbsorb / totalTicks);
+        int32 newAmount = std::max<int32>(0, currentAmount - decayPerTick);
+        absorbEff->SetAmount(newAmount);
+
+        if (Unit* target = GetTarget())
+            if (AuraApplication* app = target->GetAuraApplication(SPELL_DH_ON_THE_EDGE))
+                app->ClientUpdate();
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_first_in_last_out::CalcAmount, EFFECT_0, SPELL_AURA_SCHOOL_ABSORB);
+        OnEffectPeriodic += AuraEffectPeriodicFn(spell_first_in_last_out::HandlePeriodic, EFFECT_1, SPELL_AURA_PERIODIC_DUMMY);
+    }
+};
+
 void AddSC_demon_hunter_spell_scripts()
 {
     RegisterSpellScript(spell_dh_army_unto_oneself);
@@ -6240,4 +6290,5 @@ void AddSC_demon_hunter_spell_scripts()
     RegisterSpellScript(spell_dh_doomsayer_passive);
     RegisterSpellScript(spell_dh_doomsayer_buff);
     RegisterSpellScript(spell_dh_voidfall_meteor_damage);
+    RegisterSpellScript(spell_first_in_last_out);
 }
