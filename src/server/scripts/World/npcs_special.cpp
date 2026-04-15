@@ -341,25 +341,25 @@ struct npc_dancing_flames : public ScriptedAI
             switch (emote)
             {
                 case TEXT_EMOTE_KISS:
-                    _scheduler.Schedule(1500ms, [this](TaskContext /*context*/)
+                    _scheduler.Schedule(1500ms, [this](TaskContext const& /*context*/)
                     {
                         me->HandleEmoteCommand(EMOTE_ONESHOT_SHY);
                     });
                     break;
                 case TEXT_EMOTE_WAVE:
-                    _scheduler.Schedule(1500ms, [this](TaskContext /*context*/)
+                    _scheduler.Schedule(1500ms, [this](TaskContext const& /*context*/)
                     {
                         me->HandleEmoteCommand(EMOTE_ONESHOT_WAVE);
                     });
                     break;
                 case TEXT_EMOTE_BOW:
-                    _scheduler.Schedule(1500ms, [this](TaskContext /*context*/)
+                    _scheduler.Schedule(1500ms, [this](TaskContext const& /*context*/)
                     {
                         me->HandleEmoteCommand(EMOTE_ONESHOT_BOW);
                     });
                     break;
                 case TEXT_EMOTE_JOKE:
-                    _scheduler.Schedule(1500ms, [this](TaskContext /*context*/)
+                    _scheduler.Schedule(1500ms, [this](TaskContext const& /*context*/)
                     {
                         me->HandleEmoteCommand(EMOTE_ONESHOT_LAUGH);
                     });
@@ -399,10 +399,10 @@ public:
 
         void Reset() override
         {
-            _scheduler.Schedule(Seconds(2), [this](TaskContext context)
+            _scheduler.Schedule(Seconds(2), [this](TaskContext& context)
             {
                 me->CastSpell(nullptr, SPELL_TORCH_TARGET_PICKER);
-                _scheduler.Schedule(Seconds(3), [this](TaskContext /*context*/)
+                _scheduler.Schedule(Seconds(3), [this](TaskContext const& /*context*/)
                 {
                     me->CastSpell(nullptr, SPELL_TORCH_TARGET_PICKER);
                 });
@@ -2266,7 +2266,7 @@ struct npc_gen_void_zone : public ScriptedAI
 
     void JustAppeared() override
     {
-        _scheduler.Schedule(2s, [this](TaskContext /*task*/)
+        _scheduler.Schedule(2s, [this](TaskContext const& /*task*/)
         {
             DoCastSelf(SPELL_CONSUMPTION);
         });

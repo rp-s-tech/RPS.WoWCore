@@ -471,7 +471,7 @@ struct at_evo_firestorm : AreaTriggerAI
     {
         _damageSpellCustomArg = creatingSpell->m_customArg;
 
-        _scheduler.Schedule(0ms, [this](TaskContext task)
+        _scheduler.Schedule(0ms, [this](TaskContext& task)
         {
             FloatMilliseconds period = 2s;
             if (Unit* caster = at->GetCaster())
