@@ -3156,7 +3156,7 @@ class spell_dh_fel_rush_dash_aura : public AuraScript
     void AfterRemove(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         if (Unit* caster = GetCaster())
-            caster->GetScheduler().Schedule(100ms, [caster](TaskContext /*context*/)
+            caster->GetScheduler().Schedule(100ms, [caster](TaskContext& /*context*/)
                 {
                     if (!caster->HasAura(SPELL_DH_FEL_RUSH_WATER_AIR))
                         caster->SetDisableGravity(false);
@@ -3811,7 +3811,7 @@ class spell_dh_razor_spikes : public AuraScript
 
             if (caster->HasAura(SPELL_DH_DEMON_SPIKES))
             {
-                caster->GetScheduler().Schedule(750ms, [caster, target](TaskContext /*context*/)
+                caster->GetScheduler().Schedule(750ms, [caster, target](TaskContext& /*context*/)
                     {
                         caster->CastSpell(target, SPELL_DH_RAZOR_SPIKES, true);
                     });
@@ -4229,7 +4229,7 @@ class spell_dh_eye_of_leotheras : public AuraScript
         {
             int32 bp = aurEff->GetAmount();
             GetAura()->RefreshDuration();
-            caster->GetScheduler().Schedule(100ms, [caster, unitTarget, bp](TaskContext /*context*/)
+            caster->GetScheduler().Schedule(100ms, [caster, unitTarget, bp](TaskContext& /*context*/)
                 {
                     caster->CastSpell(unitTarget, SPELL_DH_EYE_OF_LEOTHERAS_DMG, CastSpellExtraArgs(TRIGGERED_FULL_MASK).AddSpellBP0(bp));
                 });
@@ -4763,7 +4763,7 @@ public:
             if (!caster || !caster->ToPlayer())
                 return;
 
-            caster->GetScheduler().Schedule(1750ms, [caster](TaskContext /*context*/)
+            caster->GetScheduler().Schedule(1750ms, [caster](TaskContext& /*context*/)
                 {
                     //SPELLVALUE_BASE_POINT0
 

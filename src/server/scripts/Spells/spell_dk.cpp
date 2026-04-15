@@ -1747,7 +1747,7 @@ class spell_dk_defile_aura : public AuraScript
         if (!target || !caster)
             return;
 
-        scheduler.Schedule(1s, [caster, target](TaskContext context)
+        scheduler.Schedule(1s, [caster, target](TaskContext& context)
         {
             if (!target || !caster)
                 return;

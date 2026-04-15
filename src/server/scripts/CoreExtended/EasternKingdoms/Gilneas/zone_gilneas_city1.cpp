@@ -3273,7 +3273,7 @@ class npc_king_greymanes_horse_35905 : public CreatureScript
                 _currentWaypoint = 0;
                 _isPaused = false;
 
-                _scheduler.Schedule(1s, [this](TaskContext /*context*/)
+                _scheduler.Schedule(1s, [this](TaskContext& /*context*/)
                     {
                         MoveToNextPoint();
                     });
@@ -3312,7 +3312,7 @@ class npc_king_greymanes_horse_35905 : public CreatureScript
                     if (!_isPaused)
                     {
                         _currentWaypoint++;
-                        _scheduler.Schedule(1s, [this](TaskContext /*context*/)
+                        _scheduler.Schedule(1s, [this](TaskContext& /*context*/)
                             {
                                 MoveToNextPoint();
                             });
@@ -3323,7 +3323,7 @@ class npc_king_greymanes_horse_35905 : public CreatureScript
                     // ????????? ?????????? ??????
                     _currentWaypoint++;
                     _isPaused = false;
-                    _scheduler.Schedule(1s, [this](TaskContext /*context*/)
+                    _scheduler.Schedule(1s, [this](TaskContext& /*context*/)
                         {
                             MoveToNextPoint();
                         });

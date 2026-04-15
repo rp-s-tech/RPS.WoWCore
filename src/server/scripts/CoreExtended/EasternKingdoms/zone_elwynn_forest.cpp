@@ -65,7 +65,7 @@ struct npc_stormwind_infantry : public ScriptedAI
 
     void ScheduleCombatCheck()
     {
-        _scheduler.Schedule(2s, [this](TaskContext context)
+        _scheduler.Schedule(2s, [this](TaskContext& context)
         {
             if (!me->IsInCombat())
             {

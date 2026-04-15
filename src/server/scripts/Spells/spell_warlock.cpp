@@ -2866,7 +2866,7 @@ public:
                     imp->CastSpell(target, SPELL_WARLOCK_IMPLOSION_JUMP, true);
                     imp->GetMotionMaster()->MoveJump(EVENT_JUMP, *target, 300.f, {}, 1.f);
                     ObjectGuid casterGuid = caster->GetGUID();
-                    caster->GetScheduler().Schedule(500ms, [imp, casterGuid](TaskContext /*context*/)
+                    caster->GetScheduler().Schedule(500ms, [imp, casterGuid](TaskContext& /*context*/)
                     {
                         imp->CastSpell(imp, SPELL_WARLOCK_IMPLOSION_DAMAGE, CastSpellExtraArgs(TRIGGERED_FULL_MASK).SetOriginalCaster(casterGuid));
                         imp->DisappearAndDie();
@@ -3704,8 +3704,6 @@ class spell_warl_demonic_art : public AuraScript
 
 class spell_warl_infernal_bolt_empower_aura : public AuraScript
 {
-    PrepareAuraScript(spell_warl_infernal_bolt_empower_aura);
-
     bool CheckProc(ProcEventInfo& eventInfo)
     {
         SpellInfo const* spellInfo = eventInfo.GetSpellInfo();
@@ -3746,8 +3744,6 @@ class spell_warl_infernal_bolt_empower_aura : public AuraScript
 // 433885 - Ruination Entry Aura (overrides spell with Ruination, consumed on Ruination cast)
 class spell_warl_ruination_entry_aura : public AuraScript
 {
-    PrepareAuraScript(spell_warl_ruination_entry_aura);
-
     bool CheckProc(ProcEventInfo& eventInfo)
     {
         SpellInfo const* spellInfo = eventInfo.GetSpellInfo();
@@ -3858,7 +3854,7 @@ struct npc_warl_diabolist_mother_of_chaos : public ScriptedAI
         me->CastSpell(me, SPELL_WARLOCK_DIABOLIST_VISUAL, true);
         
         ObjectGuid ownerGuid = owner->GetGUID();
-        scheduler.Schedule(100ms, [this, ownerGuid](TaskContext /*context*/)
+        scheduler.Schedule(100ms, [this, ownerGuid](TaskContext& /*context*/)
         {
             if (Unit* unitOwner = ObjectAccessor::GetUnit(*me, ownerGuid))
                 unitOwner->CastSpell(unitOwner, SPELL_WARLOCK_INFERNAL_BOLT_EMPOWER, true);
@@ -3916,7 +3912,7 @@ struct npc_warl_avatar_of_destruction_overfiend : public ScriptedAI
             me->SetFacingToObject(target);
             ObjectGuid targetGuid = target->GetGUID();
 
-            scheduler.Schedule(50ms, [this, targetGuid, ownerGuid](TaskContext context)
+            scheduler.Schedule(50ms, [this, targetGuid, ownerGuid](TaskContext& context)
             {
                 if (!me->HasUnitState(UNIT_STATE_CASTING))
                 {
@@ -3969,7 +3965,7 @@ struct npc_warl_diabolist_pit_lord : public ScriptedAI
         me->CastSpell(me, SPELL_WARLOCK_DIABOLIST_VISUAL, true);
 
         ObjectGuid ownerGuid = owner->GetGUID();
-        scheduler.Schedule(100ms, [this, ownerGuid](TaskContext /*context*/)
+        scheduler.Schedule(100ms, [this, ownerGuid](TaskContext& /*context*/)
         {
             if (Unit* unitOwner = ObjectAccessor::GetUnit(*me, ownerGuid))
                 unitOwner->CastSpell(unitOwner, SPELL_WARLOCK_RUINATION_ENTRY_AURA, true);
@@ -4251,7 +4247,7 @@ struct npc_warl_diabolic_imp : public ScriptedAI
         {
             ObjectGuid targetGuid = target->GetGUID();
 
-            scheduler.Schedule(500ms, [this, targetGuid, ownerGuid](TaskContext /*context*/)
+            scheduler.Schedule(500ms, [this, targetGuid, ownerGuid](TaskContext& /*context*/)
             {
                 Unit* target = ObjectAccessor::GetUnit(*me, targetGuid);
                 if (!target || !target->IsAlive())
@@ -4383,7 +4379,7 @@ struct npc_warl_dimensional_rift_unstable_tear : public ScriptedAI
 
             initialized = true;
 
-            scheduler.Schedule(250ms, [this, targetGuid, ownerGuid, counter = 0](TaskContext context) mutable
+            scheduler.Schedule(250ms, [this, targetGuid, ownerGuid, counter = 0](TaskContext& context) mutable
             {
                 if (counter >= 22)
                     return;
@@ -4429,7 +4425,7 @@ struct npc_warl_dimensional_rift_chaos_tear : public ScriptedAI
 
             initialized = true;
 
-            scheduler.Schedule(1500ms, [this, targetGuid, ownerGuid](TaskContext /*context*/)
+            scheduler.Schedule(1500ms, [this, targetGuid, ownerGuid](TaskContext& /*context*/)
             {
                 Unit* target = ObjectAccessor::GetUnit(*me, targetGuid);
                 if (!target || !target->IsAlive())
@@ -4470,7 +4466,7 @@ struct npc_warl_dimensional_rift_shadowy_tear : public ScriptedAI
 
             initialized = true;
 
-            scheduler.Schedule(2000ms, [this, targetGuid, ownerGuid, counter = 0](TaskContext context) mutable
+            scheduler.Schedule(2000ms, [this, targetGuid, ownerGuid, counter = 0](TaskContext& context) mutable
             {
                 if (counter >= 7)
                     return;
