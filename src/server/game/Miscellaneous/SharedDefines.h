@@ -1233,7 +1233,7 @@ enum CharacterRestrictionFlags : uint32
     CHARACTER_RESTRICTION_FLAG_EXPANSION_TRIAL      = 0x00080000,
 };
 
-// Languages.db2 (11.2.5.62687)
+// Languages.db2 (12.0.1.66838)
 enum Language
 {
     LANG_UNIVERSAL            = 0,
@@ -1283,6 +1283,7 @@ enum Language
     LANG_EARTHEN              = 304,
     LANG_NERUBIAN             = 307,
     LANG_TONGUES_OF_SANCTUARY = 308,
+    LANG_HARANI               = 309,
 };
 
 enum TeamId
