@@ -713,6 +713,12 @@ REPLACE INTO `creature_template` VALUES (73967, 0, 0, 'Niuzao', '', '', NULL, ''
 
 ALTER TABLE `scrapping_loot_template` ADD `ItemType` tinyint NOT NULL DEFAULT 0 AFTER `Entry`;
 
+REPLACE INTO `spell_linked_spell` VALUES (297744, 297871, 2, 'Transport item - Water Striders');
+REPLACE INTO `spell_linked_spell` VALUES (297729, 299712, 2, 'Transport item - Light-Step Hoofplates');
+REPLACE INTO `spell_linked_spell` VALUES (299293, 300027, 2, 'Transport item - Comfortable Rider Barding');
+REPLACE INTO `spell_linked_spell` VALUES (296790, 296863, 2, 'Transport item - Inflatable Mount Shoes');
+REPLACE INTO `spell_linked_spell` VALUES (297090, 300031, 2, 'Transport item - Saddlechute');
+
 -- ----------------------------
 -- Toys fix
 -- ----------------------------
