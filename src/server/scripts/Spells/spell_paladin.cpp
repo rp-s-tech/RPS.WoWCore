@@ -125,6 +125,9 @@ enum PaladinSpells
     SPELL_PALADIN_LIGHT_OF_THE_PROTECTOR         = 184092,
     SPELL_PALADIN_HAND_OF_THE_PROTECTOR          = 213652,
     SPELL_PALADIN_LIGHTS_CONVICTION              = 414073,
+    SPELL_PALADIN_WORD_OF_GLORY                  = 85673,
+    SPELL_PALADIN_LIGHT_OF_THE_TITANS            = 378405,
+    SPELL_PALADIN_LIGHT_OF_THE_TITANS_HOT        = 378412,
 };
 
 enum PaladinCovenantSpells
@@ -2080,6 +2083,88 @@ class spell_pal_avengers_shield : public SpellScript
     }
 };
 
+// 378405 - Light of the Titans
+class spell_pal_light_of_the_titans : public AuraScript
+{
+    bool Validate(SpellInfo const* spellInfo) override
+    {
+        return ValidateSpellInfo({ SPELL_PALADIN_LIGHT_OF_THE_TITANS_HOT })
+            && ValidateSpellEffect({ { SPELL_PALADIN_LIGHT_OF_THE_TITANS_HOT, EFFECT_0 }, { spellInfo->Id, EFFECT_1 } })
+            && sSpellMgr->AssertSpellInfo(SPELL_PALADIN_LIGHT_OF_THE_TITANS_HOT, DIFFICULTY_NONE)->GetEffect(EFFECT_0).GetPeriodicTickCount() > 0;
+    }
+
+    bool CheckEffectProc(AuraEffect const* /*aurEff*/, ProcEventInfo& eventInfo)
+    {
+        if (SpellInfo const* procSpell = eventInfo.GetSpellInfo())
+            return procSpell->Id == SPELL_PALADIN_WORD_OF_GLORY;
+        return false;
+    }
+
+    void HandleEffect0Proc(AuraEffect* aurEff, ProcEventInfo& eventInfo)
+    {
+        PreventDefaultAction();
+
+        Unit* caster = eventInfo.GetActor();
+        Unit* target = eventInfo.GetProcTarget();
+        if (!caster || !target)
+            return;
+
+        SpellEffectValue healPct = GetEffectInfo(EFFECT_0).CalcValue(caster) / 100.0;
+        SpellEffectValue totalHeal = healPct * target->GetMaxHealth();
+
+        if (caster == target)
+        {
+            Unit::AuraEffectList const& periodicDamage = caster->GetAuraEffectsByType(SPELL_AURA_PERIODIC_DAMAGE);
+            if (!periodicDamage.empty())
+            {
+                SpellEffectValue bonusPct = GetEffectInfo(EFFECT_1).CalcValue(caster);
+                AddPct(totalHeal, bonusPct);
+            }
+        }
+
+        uint32 ticks = sSpellMgr->AssertSpellInfo(SPELL_PALADIN_LIGHT_OF_THE_TITANS_HOT, DIFFICULTY_NONE)->GetEffect(EFFECT_0).GetPeriodicTickCount();
+        SpellEffectValue healPerTick = totalHeal / ticks;
+
+        caster->CastSpell(target, SPELL_PALADIN_LIGHT_OF_THE_TITANS_HOT, CastSpellExtraArgsInit{
+            .TriggerFlags = TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_DONT_REPORT_CAST_ERROR,
+            .TriggeringAura = aurEff,
+            .SpellValueOverrides = { { SPELLVALUE_BASE_POINT0, healPerTick } }
+            });
+    }
+
+    void HandleEffect1Proc(AuraEffect* /*aurEff*/, ProcEventInfo& /*eventInfo*/)
+    {
+        PreventDefaultAction();
+    }
+
+    void Register() override
+    {
+        DoCheckEffectProc += AuraCheckEffectProcFn(spell_pal_light_of_the_titans::CheckEffectProc, EFFECT_0, SPELL_AURA_DUMMY);
+        DoCheckEffectProc += AuraCheckEffectProcFn(spell_pal_light_of_the_titans::CheckEffectProc, EFFECT_1, SPELL_AURA_DUMMY);
+        OnEffectProc += AuraEffectProcFn(spell_pal_light_of_the_titans::HandleEffect0Proc, EFFECT_0, SPELL_AURA_DUMMY);
+        OnEffectProc += AuraEffectProcFn(spell_pal_light_of_the_titans::HandleEffect1Proc, EFFECT_1, SPELL_AURA_DUMMY);
+    }
+};
+
+// 378412 - Light of the Titans (HoT)
+class spell_pal_light_of_the_titans_hot : public AuraScript
+{
+    bool Validate(SpellInfo const* spellInfo) override
+    {
+        return ValidateSpellEffect({ { spellInfo->Id, EFFECT_0 } });
+    }
+
+    void CalculateAmount(AuraEffect const* /*aurEff*/, SpellEffectValue& /*amount*/, bool& canBeRecalculated)
+    {
+        canBeRecalculated = false;
+    }
+
+    void Register() override
+    {
+        DoEffectCalcAmount += AuraEffectCalcAmountFn(spell_pal_light_of_the_titans_hot::CalculateAmount, EFFECT_0, SPELL_AURA_PERIODIC_HEAL);
+    }
+};
+
 void AddSC_paladin_spell_scripts()
 {
     RegisterSpellScript(spell_pal_a_just_reward);
@@ -2142,4 +2227,6 @@ void AddSC_paladin_spell_scripts()
     RegisterSpellScript(spell_pal_holy_shield);
     RegisterSpellScript(spell_pal_divine_toll);
     RegisterSpellScript(spell_pal_avengers_shield);
+    RegisterSpellScript(spell_pal_light_of_the_titans);
+    RegisterSpellScript(spell_pal_light_of_the_titans_hot);
 }

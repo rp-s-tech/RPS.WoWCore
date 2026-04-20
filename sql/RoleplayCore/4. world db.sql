@@ -532,6 +532,8 @@ REPLACE INTO `spell_script_names` VALUES (85043, 'spell_pal_grand_crusader');
 REPLACE INTO `spell_script_names` VALUES (152261, 'spell_pal_holy_shield');
 REPLACE INTO `spell_script_names` VALUES (375576, 'spell_pal_divine_toll');
 REPLACE INTO `spell_script_names` VALUES (31935, 'spell_pal_avengers_shield');
+REPLACE INTO `spell_script_names` VALUES (378405, 'spell_pal_light_of_the_titans');
+REPLACE INTO `spell_script_names` VALUES (378412, 'spell_pal_light_of_the_titans_hot');
 REPLACE INTO `spell_linked_spell` VALUES (321136, 327510, 2, 'Shining Light aura');
 
 -- ----------------------------
