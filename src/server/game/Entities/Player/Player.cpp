@@ -32025,7 +32025,28 @@ void Player::EquipTransmogOutfit(uint32 id, TransmogSituationTrigger trigger, Op
     {
         for (UF::TransmogOutfitSlotData const& slot : transmogOutfit->Slots)
         {
-            uint32 slotIndex = TransmogMgr::GetSlotAndOption(static_cast<TransmogOutfitSlot>(*slot.Slot), static_cast<TransmogOutfitSlotOption>(*slot.SlotOption))->SlotIndex;
+            TransmogMgr::TransmogOutfitSlotAndOptionInfo const* slotInfo = TransmogMgr::GetSlotAndOption(static_cast<TransmogOutfitSlot>(*slot.Slot), static_cast<TransmogOutfitSlotOption>(*slot.SlotOption));
+            if (!slotInfo)
+                continue;
+
+            int32 equipSlot = slotInfo->Slot->InventorySlotEnum;
+            if (slotInfo->Slot->HasFlag(TransmogOutfitSlotFlags::IsSecondarySlot))
+            {
+                for (TransmogMgr::TransmogOutfitSlotAndOptionInfo const& primarySlotInfo : TransmogMgr::GetAllSlots())
+                {
+                    if (!primarySlotInfo.Slot->HasFlag(TransmogOutfitSlotFlags::IsSecondarySlot)
+                        && primarySlotInfo.Slot->SecondarySlotID == static_cast<int32>(slotInfo->Slot->ID))
+                    {
+                        equipSlot = primarySlotInfo.Slot->InventorySlotEnum;
+                        break;
+                    }
+                }
+            }
+
+            if (equipSlot < 0 || equipSlot >= EQUIPMENT_SLOT_END || !GetItemByPos(INVENTORY_SLOT_BAG_0, equipSlot))
+                continue;
+
+            uint32 slotIndex = slotInfo->SlotIndex;
             auto viewedOutfitSlot = viewedOutfit.ModifyValue(&UF::TransmogOutfitData::Slots, slotIndex);
             if (static_cast<TransmogOutfitDisplayType>(*slot.AppearanceDisplayType) != TransmogOutfitDisplayType::Unassigned)
             {

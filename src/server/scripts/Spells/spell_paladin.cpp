@@ -124,6 +124,7 @@ enum PaladinSpells
     SPELL_PALADIN_RIGHTEOUS_PROTECTOR            = 204074,
     SPELL_PALADIN_LIGHT_OF_THE_PROTECTOR         = 184092,
     SPELL_PALADIN_HAND_OF_THE_PROTECTOR          = 213652,
+    SPELL_PALADIN_LIGHTS_CONVICTION              = 414073,
 };
 
 enum PaladinCovenantSpells
@@ -1259,6 +1260,13 @@ class spell_pal_holy_shock : public SpellScript
             }
 
             caster->CastSpell(unitTarget, targetSpell, args);
+
+            if (caster->HasAura(SPELL_PALADIN_LIGHTS_CONVICTION))
+            {
+                int32 manaCost = GetSpell()->GetPowerTypeCostAmount(POWER_MANA).value_or(0);
+                if (manaCost > 0)
+                    caster->ModifyPower(POWER_MANA, CalculatePct(manaCost, 50));
+            }
         }
     }
 
