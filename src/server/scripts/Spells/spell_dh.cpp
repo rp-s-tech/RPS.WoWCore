@@ -5915,7 +5915,7 @@ class spell_dh_emptiness_buff : public AuraScript
         canBeRecalculated = false;
     }
 
-    void HandleApply(AuraEffect const* aurEff, AuraEffectHandleModes /*mode*/)
+    void HandleApply(AuraEffect const* /*aurEff*/, AuraEffectHandleModes /*mode*/)
     {
         Unit* target = GetTarget();
         float newHaste = 0.25f * float(GetStackAmount());
