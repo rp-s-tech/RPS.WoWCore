@@ -650,7 +650,7 @@ void WorldSession::SendListInventory(ObjectGuid vendorGuid)
                 continue;
             }
 
-            uint64 basePrice = vendorItem->GetBuyPrice();
+            uint64 basePrice = vendorItem->GetBuyPrice(itemTemplate);
             if (ItemExtendedCostEntry const* iece = sItemExtendedCostStore.LookupEntry(vendorItem->ExtendedCost))
                 basePrice = iece->Money;
 
