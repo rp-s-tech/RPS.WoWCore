@@ -301,7 +301,6 @@ enum DemonHunterSpells
     SPELL_DH_MANA_RIFT_SPELL                       = 235903,
     SPELL_DH_SOUL_FRAGMENT_HEAL_25_HAVOC           = 178963,
     SPELL_DH_BALANCED_BLADES                       = 201470,
-    SPELL_DH_REAP                                  = 1226019,
     SPELL_DH_REAP_FURY                             = 1261679,
     SPELL_DH_CULL                                  = 1245453,
     SPELL_DH_DEVOUR                                = 1217610,
