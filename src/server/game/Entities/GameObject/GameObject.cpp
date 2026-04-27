@@ -4701,7 +4701,7 @@ bool GameObject::IsAtInteractDistance(Player const* player, SpellInfo const* spe
         float maxRange = spell->GetMaxRange(spell->IsPositive());
 
         if (GetGoType() == GAMEOBJECT_TYPE_SPELL_FOCUS)
-            return maxRange * maxRange >= GetExactDistSq(player);
+            return IsInDist(player, maxRange);
 
         if (sGameObjectDisplayInfoStore.LookupEntry(GetGOInfo()->displayId))
             return IsAtInteractDistance(*player, maxRange);
