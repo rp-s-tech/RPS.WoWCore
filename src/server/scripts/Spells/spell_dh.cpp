@@ -167,6 +167,7 @@ enum DemonHunterSpells
     SPELL_DH_METAMORPHOSIS_RESET                   = 320645,
     SPELL_DH_METAMORPHOSIS_TRANSFORM               = 162264,
     SPELL_DH_METAMORPHOSIS_VENGEANCE_TRANSFORM     = 187827,
+    SPELL_DH_MOMENTUM_AURA                         = 206476,
     SPELL_DH_MOMENTUM                              = 208628,
     SPELL_DH_MOMENT_OF_CRAVING_TALENT              = 1238488,
     SPELL_DH_MOMENT_OF_CRAVING_BUFF                = 1238495,
@@ -3168,7 +3169,7 @@ class spell_dh_void_ray : public AuraScript
                 TRIGGERED_IGNORE_CAST_IN_PROGRESS | TRIGGERED_DONT_REPORT_CAST_ERROR);
 
         // Moment of Craving: reset Reap CD + apply buff (+6 fragments + Eradicate override)
-        if (target->HasAura(SPELL_DH_MOMENT_OF_CRAVING_PASSIVE))
+        if (target->HasAura(SPELL_DH_MOMENT_OF_CRAVING_TALENT))
         {
             target->GetSpellHistory()->ResetCooldown(SPELL_DH_REAP, true);
             target->GetSpellHistory()->ResetCooldown(SPELL_DH_CULL, true);
@@ -3240,8 +3241,8 @@ class spell_dh_fel_rush : public SpellScript
                 caster->CastSpell(caster, SPELL_DH_FEL_RUSH_GROUND, true);
                 caster->CastSpell(caster, SPELL_DH_FEL_RUSH_DAMAGE, TRIGGERED_FULL_DEBUG_MASK);
 
-                if (caster->HasAura(SPELL_DH_MOMENTUM))
-                    caster->CastSpell(nullptr, SPELL_DH_MOMENTUM_BUFF, true);
+                if (caster->HasAura(SPELL_DH_MOMENTUM_AURA))
+                    caster->CastSpell(nullptr, SPELL_DH_MOMENTUM, true);
             }
             caster->GetSpellHistory()->AddCooldown(GetSpellInfo()->Id, 0, std::chrono::milliseconds(750));
         }
@@ -3258,8 +3259,8 @@ class spell_dh_fel_rush : public SpellScript
                 caster->CastSpell(caster, SPELL_DH_FEL_RUSH_WATER_AIR, true);
                 caster->CastSpell(caster, SPELL_DH_FEL_RUSH_DAMAGE, TRIGGERED_FULL_DEBUG_MASK);
 
-                if (caster->HasAura(SPELL_DH_MOMENTUM))
-                    caster->CastSpell(nullptr, SPELL_DH_MOMENTUM_BUFF, true);
+                if (caster->HasAura(SPELL_DH_MOMENTUM_AURA))
+                    caster->CastSpell(nullptr, SPELL_DH_MOMENTUM, true);
 
                 caster->GetSpellHistory()->AddCooldown(GetSpellInfo()->Id, 0, std::chrono::milliseconds(750));
             }
