@@ -930,7 +930,7 @@ WorldPacket const* PlayerSavePersonalEmblem::Write()
 WorldPacket const* NeutralPlayerFactionSelectResult::Write()
 {
     _worldPacket << NewRaceID;
-    _worldPacket.WriteBit(Success);
+    _worldPacket >> Bits<1>(Success);
     _worldPacket.FlushBits();
 
     return &_worldPacket;

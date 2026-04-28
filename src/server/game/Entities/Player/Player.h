@@ -2084,6 +2084,9 @@ class TC_GAME_API Player final : public Unit, public GridObject<Player>
         void ApplyTraitEntryChanges(int32 editedConfigId, WorldPackets::Traits::TraitConfig const& newConfig, bool applyTraits, bool consumeCurrencies);
         void RenameTraitConfig(int32 editedConfigId, std::string&& newName);
         void DeleteTraitConfig(int32 deletedConfigId);
+
+        void ShowNeutralPlayerFactionSelectUI();
+
         void AddMoveImpulse(Position direction);
         void ApplyTraitConfig(int32 configId, bool apply);
         void ApplyTraitEntry(int32 traitNodeEntryId, int32 rank, int32 grantedRanks, bool apply);
@@ -3517,8 +3520,6 @@ class TC_GAME_API Player final : public Unit, public GridObject<Player>
         bool HasWargameRequest() const { return _wargameRequest != nullptr; }
         WargameRequest* GetWargameRequest() const { return _wargameRequest; }
         WargameRequest* _wargameRequest;
-
-        void ShowNeutralPlayerFactionSelectUI();
 
         // Spell cast request handling
     public:

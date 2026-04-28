@@ -887,6 +887,11 @@ WorldPacket const* AccountWarbandSceneUpdate::Write()
     return &_worldPacket;
 }
 
+void WorldPackets::Misc::FactionSelect::Read()
+{
+    _worldPacket >> FactionChoice;
+}
+
 void AccountNotificationAcknowledge::Read()
 {
     _worldPacket >> unk;
@@ -923,11 +928,6 @@ void ShowTradeSkill::Read()
     _worldPacket >> PlayerGUID;
     _worldPacket >> SpellID;
     _worldPacket >> SkillLineID;
-}
-
-void WorldPackets::Misc::FactionSelect::Read()
-{
-    _worldPacket >> FactionChoice;
 }
 
 void WorldPackets::Misc::ActivateSoulbind::Read()

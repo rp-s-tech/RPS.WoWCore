@@ -1532,6 +1532,7 @@ void AddSC_zone_the_wandering_isle()
     RegisterSpellScript(spell_ride_drake);
     RegisterSpellScript(spell_meditation_timer_bar);
     RegisterSpellScript(spell_flame_spout);
+    RegisterSpellScript(spell_pandaren_faction_choice);
 
     new at_min_dimwind_captured();
     new at_cave_of_meditation();
@@ -1548,6 +1549,4 @@ void AddSC_zone_the_wandering_isle()
     RegisterCreatureAI(npc_li_fei_combat);
     RegisterSpellScript(spell_feet_of_fury);
     RegisterSpellScript(spell_flying_shadow_kick);
-
-	RegisterSpellScript(spell_pandaren_faction_choice);
 }

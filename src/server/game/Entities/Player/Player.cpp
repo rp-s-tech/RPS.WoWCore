@@ -32647,6 +32647,12 @@ bool Player::CanExecutePendingSpellCastRequest()
     return true;
 }
 
+void Player::ShowNeutralPlayerFactionSelectUI()
+{
+    WorldPackets::Misc::FactionSelectUI packet;
+    GetSession()->SendPacket(packet.Write());
+}
+
 bool Player::HasQuest(uint32 questID) const
 {
     if (questID == 0)
@@ -32680,10 +32686,4 @@ bool Player::TeleportToDigsiteInMap(uint32 mapId)
 
     return true;
 
-}
-
-void Player::ShowNeutralPlayerFactionSelectUI()
-{
-    WorldPackets::Misc::FactionSelectUI packet;
-    GetSession()->SendPacket(packet.Write());
 }
