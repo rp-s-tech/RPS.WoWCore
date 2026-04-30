@@ -2130,6 +2130,7 @@ CREATE TABLE `character_transmog_outfit_slot` (
   `transmogOutfitId` int NOT NULL,
   `slot` tinyint NOT NULL,
   `slotOption` tinyint NOT NULL,
+  `sheatheCategory` tinyint unsigned NOT NULL,
   `itemModifiedAppearanceID` int NOT NULL,
   `appearanceDisplayType` tinyint NOT NULL,
   `spellItemEnchantmentID` int NOT NULL,
