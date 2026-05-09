@@ -1104,10 +1104,10 @@ struct ChrCustomizationGeosetLoadInfo
 {
     static constexpr DB2FieldMeta Fields[4] =
         {
-            { false, FT_INT, "ID" },
-            { true, FT_INT, "GeosetType" },
-            { true, FT_INT, "GeosetID" },
-            { true, FT_INT, "Modifier" },
+            { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+            { .IsSigned = true, .Type = FT_BYTE, .Name = "GeosetType" },
+            { .IsSigned = true, .Type = FT_INT, .Name = "GeosetID" },
+            { .IsSigned = true, .Type = FT_INT, .Name = "Modifier" },
         };
 
     static constexpr DB2LoadInfo Instance{ Fields, 4, &ChrCustomizationGeosetMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_GEOSET };
