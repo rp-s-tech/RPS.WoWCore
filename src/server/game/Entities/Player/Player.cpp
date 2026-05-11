@@ -1278,8 +1278,8 @@ bool Player::TeleportTo(TeleportLocation const& teleportLocation, TeleportToOpti
 {
     if (!MapManager::IsValidMapCoord(teleportLocation.Location))
     {
-        TC_LOG_ERROR("maps", "Player::TeleportTo: Invalid map ({}) or invalid coordinates ({}) given when teleporting player '{}' ({}, MapID: {}, {}).",
-            teleportLocation.Location.GetMapId(), teleportLocation.Location.ToString(), GetGUID().ToString(), GetName(), GetMapId(), GetPosition().ToString());
+        TC_LOG_ERROR("maps", "Player::TeleportTo: Invalid map ({}) or invalid coordinates ({}) given when teleporting player '{}' ({}, {}).",
+            teleportLocation.Location, GetGUID().ToString(), GetName(), GetMapId(), GetPosition());
         return false;
     }
 
@@ -8322,7 +8322,39 @@ void Player::_ApplyItemBonuses(Item* item, uint8 slot, bool apply)
         }
     }
 
-    if (uint32 armor = proto->GetArmor(itemLevel))
+    BonusData const* bonus = item->GetBonus();
+    uint32 baseArmorItemLevel = bonus->ItemLevel;
+    if (bonus->PlayerLevelToItemLevelCurveId)
+    {
+        uint32 level = GetLevel();
+        if (Optional<ContentTuningLevels> levels = sDB2Manager.GetContentTuningData(bonus->ContentTuningId, {}, true))
+            level = std::min(std::max(int16(level), levels->MinLevel), levels->MaxLevel);
+        baseArmorItemLevel = uint32(sDB2Manager.GetCurveValueAt(bonus->PlayerLevelToItemLevelCurveId, level));
+    }
+    baseArmorItemLevel += bonus->ItemLevelBonus;
+    for (uint32 i = 0; i < MAX_ITEM_PROTO_SOCKETS; ++i)
+        baseArmorItemLevel += bonus->GemItemLevelBonus[i];
+    baseArmorItemLevel = std::min(std::max(baseArmorItemLevel, uint32(MIN_ITEM_LEVEL)), uint32(MAX_ITEM_LEVEL));
+
+    uint32 armorItemLevel = baseArmorItemLevel;
+    if (bonus->ItemLevelOffsetCurveId)
+    {
+        uint32 effectiveItemLevel = bonus->ItemLevelOffset + uint32(sDB2Manager.GetCurveValueAt(bonus->ItemLevelOffsetCurveId, bonus->ItemLevelOffsetItemLevel));
+        for (uint32 i = 0; i < MAX_ITEM_PROTO_SOCKETS; ++i)
+            effectiveItemLevel += bonus->GemItemLevelBonus[i];
+        effectiveItemLevel = std::min(std::max(effectiveItemLevel, uint32(MIN_ITEM_LEVEL)), uint32(MAX_ITEM_LEVEL));
+
+        if (baseArmorItemLevel > 0)
+        {
+            float ratio = float(effectiveItemLevel) / float(baseArmorItemLevel);
+            if (ratio > 0.3f && ratio < 3.0f)
+                armorItemLevel = effectiveItemLevel;
+        }
+        else
+            armorItemLevel = effectiveItemLevel;
+    }
+
+    if (uint32 armor = proto->GetArmor(armorItemLevel))
     {
         HandleStatFlatModifier(UNIT_MOD_ARMOR, TOTAL_VALUE, float(armor), apply);
         if (proto->GetClass() == ITEM_CLASS_ARMOR && proto->GetSubClass() == ITEM_SUBCLASS_ARMOR_SHIELD)
@@ -18841,7 +18873,7 @@ bool Player::LoadFromDB(ObjectGuid guid, CharacterDatabaseQueryHolder const& hol
                 std::fabs(m_movementInfo.transport.pos.GetPositionZ()) > 250.0f)
             {
                 TC_LOG_ERROR("entities.player.loading", "Player::LoadFromDB: Player ({}) has invalid transport coordinates ({}). Teleport to bind location.",
-                    guid.ToString(), globalPosition.ToString());
+                    guid.ToString(), globalPosition);
 
                 m_movementInfo.transport.Reset();
 
@@ -20103,7 +20135,7 @@ void Player::_LoadQuestStatus(PreparedQueryResult result)
             else
                 endTime = 0;
 
-            TC_LOG_DEBUG("entities.player.loading", "Player::_LoadQuestStatus: Quest status is {{{}}} for quest {{{}}} for player ({})", questStatusData.Status, quest_id, GetGUID().ToString());
+            TC_LOG_DEBUG("entities.player.loading", "Player::_LoadQuestStatus: Quest status is {} for quest {} for player ({})", questStatusData.Status, quest_id, GetGUID().ToString());
 
             // add to quest log
             if (slot < MAX_QUEST_LOG_SIZE && questStatusData.Status != QUEST_STATUS_NONE)
@@ -20427,8 +20459,8 @@ void Player::_LoadStoredAuraTeleportLocations(PreparedQueryResult result)
             WorldLocation location(fields[1].GetUInt32(), fields[2].GetFloat(), fields[3].GetFloat(), fields[4].GetFloat(), fields[5].GetFloat());
             if (!MapManager::IsValidMapCoord(location))
             {
-                TC_LOG_ERROR("spells", "Player::_LoadStoredAuraTeleportLocations: Player {} ({}) spell (ID: {}) has invalid position on map {}, {{{}}}.",
-                    GetName(), GetGUID().ToString(), spellId, location.GetMapId(), location.ToString());
+                TC_LOG_ERROR("spells", "Player::_LoadStoredAuraTeleportLocations: Player {} ({}) spell (ID: {}) has invalid position {}.",
+                    GetName(), GetGUID().ToString(), spellId, location);
                 continue;
             }
 
@@ -31179,31 +31211,6 @@ bool Player::IsFriendlyArea(AreaTableEntry const* areaEntry) const
         return false;
 
     return true;
-}
-
-std::string Player::GetMapAreaAndZoneString() const
-{
-    uint32 areaId = GetAreaId();
-    std::string areaName = "Unknown";
-    std::string zoneName = "Unknown";
-    if (AreaTableEntry const* area = sAreaTableStore.LookupEntry(areaId))
-    {
-        areaName = area->AreaName[GetSession()->GetSessionDbcLocale()];
-        if (area->GetFlags().HasFlag(AreaFlags::IsSubzone))
-            if (AreaTableEntry const* zone = sAreaTableStore.LookupEntry(area->ParentAreaID))
-                zoneName = zone->AreaName[GetSession()->GetSessionDbcLocale()];
-    }
-
-    std::ostringstream str;
-    str << "Map: " << GetMapId() << " (" << (FindMap() ? FindMap()->GetMapName() : "Unknown") << ") Area: " << areaId << " (" << areaName.c_str() << ") Zone: " << zoneName.c_str();
-    return str.str();
-}
-
-std::string Player::GetCoordsMapAreaAndZoneString() const
-{
-    std::ostringstream str;
-    str << Position::ToString() << " " << GetMapAreaAndZoneString();
-    return str.str();
 }
 
 Guild* Player::GetGuild()
