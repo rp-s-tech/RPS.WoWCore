@@ -816,7 +816,7 @@ struct ChrCustomizationMaterialEntry
 struct ChrCustomizationGeosetEntry
 {
     uint32 ID;
-    int32 GeosetType;
+    int8 GeosetType;
     int32 GeosetID;
     int32 Modifier;
 };
