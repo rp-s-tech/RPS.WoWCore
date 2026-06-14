@@ -821,6 +821,14 @@ struct ChrCustomizationGeosetEntry
     int32 Modifier;
 };
 
+struct ChrCustItemGeoModifyEntry
+{
+    uint32 ID;
+    int8 GeosetType;
+    int32 Original;
+    int32 Override;
+};
+
 struct ChrCustomizationOptionEntry
 {
     LocalizedString Name;

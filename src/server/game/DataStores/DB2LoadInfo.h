@@ -1113,6 +1113,19 @@ struct ChrCustomizationGeosetLoadInfo
     static constexpr DB2LoadInfo Instance{ Fields, 4, &ChrCustomizationGeosetMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_GEOSET };
 };
 
+struct ChrCustItemGeoModifyLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[4] =
+        {
+            { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+            { .IsSigned = true, .Type = FT_BYTE, .Name = "GeosetType" },
+            { .IsSigned = true, .Type = FT_INT, .Name = "Original" },
+            { .IsSigned = true, .Type = FT_INT, .Name = "Override" },
+        };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 4, &ChrCustItemGeoModifyMeta::Instance, HOTFIX_SEL_CHR_CUST_ITEM_GEO_MODIFY };
+};
+
 struct ChrCustomizationMaterialLoadInfo
 {
 	static constexpr DB2FieldMeta Fields[3] =
