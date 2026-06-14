@@ -5082,23 +5082,85 @@ void SpellMgr::LoadSpellInfoCorrections()
 
     //
     // THE WANDERING ISLE SPELLS
-    //
-
-    // Summon Master Li Fei
-    ApplySpellFix({ 102445 }, [](SpellInfo* spellInfo)
-    {
-        ApplySpellEffectFix(spellInfo, EFFECT_0, [](SpellEffectInfo* spellEffectInfo)
+    // Summon Pet
+    ApplySpellFix({ 107924 }, [](SpellInfo* spellInfo)
         {
-            spellEffectInfo->TargetA = SpellImplicitTargetInfo(TARGET_DEST_DB);
+            ApplySpellEffectFix(spellInfo, EFFECT_1, [](SpellEffectInfo* spellEffectInfo)
+                {
+                    spellEffectInfo->TargetA = SpellImplicitTargetInfo(TARGET_UNIT_CASTER);
+                });
         });
-    });
+
+    ApplySpellFix({
+        102445, // Summon Master Li Fei
+        102499, // Fire Crash
+        108858, // Summon Tiger Stand
+        }, [](SpellInfo* spellInfo)
+        {
+            ApplySpellEffectFix(spellInfo, EFFECT_0, [](SpellEffectInfo* spellEffectInfo)
+                {
+                    spellEffectInfo->TargetA = SpellImplicitTargetInfo(TARGET_DEST_DB);
+                });
+        });
+
+    ApplySpellFix({
+        114710, // Forcecast Summon Amberleaf Troublemaker
+        118032  // Water Spout
+        }, [](SpellInfo* spellInfo)
+        {
+            spellInfo->MaxAffectedTargets = 1;
+        });
+
+    // Summon Lightning
+    ApplySpellFix({ 109062 }, [](SpellInfo* spellInfo)
+        {
+            spellInfo->CastTimeEntry = sSpellCastTimesStore.LookupEntry(1);
+        });
 
     // Flame Spout
     ApplySpellFix({ 114685 }, [](SpellInfo* spellInfo)
-    {
-        spellInfo->AttributesEx |= SPELL_ATTR1_NO_THREAT;
-        spellInfo->AttributesEx8 |= SPELL_ATTR8_CAN_ATTACK_IMMUNE_PC;
-    });
+        {
+            ApplySpellEffectFix(spellInfo, EFFECT_0, [](SpellEffectInfo* spellEffectInfo)
+                {
+                    spellEffectInfo->TargetARadiusEntry = sSpellRadiusStore.LookupEntry(EFFECT_RADIUS_1_YARD);
+                });
+
+            spellInfo->AttributesEx |= SPELL_ATTR1_NO_THREAT;
+            spellInfo->AttributesEx8 |= SPELL_ATTR8_CAN_ATTACK_IMMUNE_PC;
+        });
+
+    // Ride Vehicle
+    ApplySpellFix({ 102717 }, [](SpellInfo* spellInfo)
+        {
+            spellInfo->RecoveryTime = 0;
+        });
+
+    // Summon Jojo Ironbrow
+    ApplySpellFix({ 108845 }, [](SpellInfo* spellInfo)
+        {
+            spellInfo->DurationEntry = sSpellDurationStore.LookupEntry(4); // 120 seconds
+        });
+
+    // Eject Passenger 1
+    ApplySpellFix({ 60603 }, [](SpellInfo* spellInfo)
+        {
+            ApplySpellEffectFix(spellInfo, EFFECT_0, [](SpellEffectInfo* spellEffectInfo)
+                {
+                    spellEffectInfo->BasePoints = 1;
+                });
+        });
+
+    ApplySpellFix({
+        104012, // Break Gong Credit
+        105002, // Summon Hot Air Balloon
+        120344, // Summon Aysa
+        120345, // Summon Jojo
+        120749, // Summon Ji
+        120753  // Summon Garrosh
+        }, [](SpellInfo* spellInfo)
+        {
+            spellInfo->RangeEntry = sSpellRangeStore.LookupEntry(7); // 10yd
+        });
 
     // ENDOF THE WANDERING ISLE SPELLS
     //
@@ -5186,6 +5248,24 @@ void SpellMgr::LoadSpellInfoCorrections()
     ApplySpellFix({ 42401, 43105, 42428 }, [](SpellInfo* spellInfo)
     {
         spellInfo->Attributes |= SPELL_ATTR0_NO_IMMUNITIES;
+    });
+
+    ApplySpellFix({
+        61874, // Noblegarden Chocolate
+        71068, // Sweet Surprise
+        71071, // Very Berry Cream
+        71073, // Dark Desire
+        71074  // Buttermilk Delight
+    }, [](SpellInfo* spellInfo)
+    {
+        ApplySpellEffectFix(spellInfo, EFFECT_1, [](SpellEffectInfo* spellEffectInfo)
+        {
+            spellEffectInfo->Effect          = SPELL_EFFECT_APPLY_AURA;
+            spellEffectInfo->TargetA         = SpellImplicitTargetInfo(TARGET_UNIT_CASTER);
+            spellEffectInfo->ApplyAuraName   = SPELL_AURA_PERIODIC_TRIGGER_SPELL;
+            spellEffectInfo->ApplyAuraPeriod = 10 * IN_MILLISECONDS;
+            spellEffectInfo->TriggerSpell    = 24870;
+        });
     });
 
     // Horde / Alliance switch (BG mercenary system)
@@ -5406,7 +5486,7 @@ void SpellMgr::LoadSpellInfoImmunities()
             for (std::string_view token : Trinity::Tokenize(fields[4].GetStringView(), ',', false))
             {
                 if (Optional<uint32> effect = Trinity::StringTo<uint32>(token); effect && effect < uint32(TOTAL_SPELL_EFFECTS))
-                    immunities.Effect.push_back(SpellEffectName(*effect));
+                    immunities.Effect.push_back(SpellEffects(*effect));
                 else
                     TC_LOG_ERROR("sql.sql", "Invalid effect type in `Effects` {} for creature immunities {}, skipped", token, id);
             }

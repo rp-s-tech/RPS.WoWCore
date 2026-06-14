@@ -854,6 +854,7 @@ enum CurrencyConsts
 {
     CURRENCY_TYPE_ANCIENT_MANA    = 1155,
     CURRENCY_TYPE_AZERITE         = 1553,
+    CURRENCY_TRADERS_TENDER       = 2032,
 
     CURRENCY_MAX_CAP_ANCIENT_MANA = 2000
 };
@@ -1266,7 +1267,7 @@ enum ItemBonusType
     ITEM_BONUS_RELIC_TYPE                       = 17,
     ITEM_BONUS_OVERRIDE_REQUIRED_LEVEL          = 18,
     ITEM_BONUS_AZERITE_TIER_UNLOCK_SET          = 19,
-    ITEM_BONUS_SCRAPPING_LOOT_ID                = 20, /*NYI*/
+    ITEM_BONUS_SCRAPPING_LOOT_ID                = 20,
     ITEM_BONUS_OVERRIDE_CAN_DISENCHANT          = 21,
     ITEM_BONUS_OVERRIDE_CAN_SCRAP               = 22,
     ITEM_BONUS_ITEM_EFFECT_ID                   = 23,

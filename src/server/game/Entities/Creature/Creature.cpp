@@ -35,6 +35,7 @@
 #include "ItemTemplate.h"
 #include "Log.h"
 #include "Loot.h"
+#include <iostream>
 #include "LootMgr.h"
 #include "MapManager.h"
 #include "MapUtils.h"
@@ -1774,6 +1775,8 @@ void Creature::UpdateLevelDependantStats()
 
     // damage
     float basedamage = GetBaseDamageForLevel(level);
+    //float attackTime = GetBaseAttackTime(BASE_ATTACK);
+    //CreatureDifficulty const* creatureDifficulty = GetCreatureDifficulty();
 
     float weaponBaseMinDamage = basedamage;
     float weaponBaseMaxDamage = basedamage * 1.5f;
@@ -2444,7 +2447,10 @@ void Creature::setDeathState(DeathState s)
 
         Motion_Initialize();
         Unit::setDeathState(ALIVE);
-        LoadCreaturesAddon();
+
+        if (!IsPet())
+            LoadCreaturesAddon();
+
         LoadCreaturesSparringHealth();
     }
 }
@@ -2592,7 +2598,7 @@ void Creature::LoadTemplateImmunities(int32 creatureImmunitiesId)
             if (immunities->Mechanic[i])
                 ApplySpellImmune(placeholderSpellId, IMMUNITY_MECHANIC, i, apply);
 
-        for (SpellEffectName effect : immunities->Effect)
+        for (SpellEffects effect : immunities->Effect)
             ApplySpellImmune(placeholderSpellId, IMMUNITY_EFFECT, effect, apply);
 
         for (AuraType aura : immunities->Aura)
@@ -3266,7 +3272,9 @@ float Creature::GetDamageMultiplierForTarget(WorldObject const* target) const
     uint8 levelForTarget = GetLevelForTarget(target);
     uint32 contentTuningId = GetContentTuningIdForTarget(target);
 
-    return GetBaseDamageForLevel(levelForTarget, contentTuningId) / GetBaseDamageForLevel(GetLevel());
+    float multiplier = GetBaseDamageForLevel(levelForTarget, contentTuningId) / GetBaseDamageForLevel(GetLevel());
+
+    return multiplier;
 }
 
 float Creature::GetBaseArmorForLevel(uint8 level) const
@@ -4036,11 +4044,13 @@ std::string Creature::GetDebugInfo() const
 
 void Creature::ExitVehicle(Position const* /*exitPosition*/)
 {
+    bool const isInVehicle = GetVehicle();
     Unit::ExitVehicle();
 
-    // if the creature exits a vehicle, set it's home position to the
+    // if alive creature exits a vehicle, set it's home position to the
     // exited position so it won't run away (home) and evade if it's hostile
-    SetHomePosition(GetPosition());
+    if (isInVehicle && IsAlive())
+        SetHomePosition(GetPosition());
 }
 
 void Creature::SetGuid(ObjectGuid const& guid) {

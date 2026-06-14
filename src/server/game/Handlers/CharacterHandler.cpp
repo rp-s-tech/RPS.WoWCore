@@ -313,10 +313,6 @@ bool LoginQueryHolder::Initialize()
     stmt->setUInt64(0, lowGuid);
     res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_QUEST_STATUS_REW, stmt);
 
-    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_ACCOUNT_INSTANCELOCKTIMES);
-    stmt->setUInt32(0, m_accountId);
-    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_INSTANCE_LOCK_TIMES, stmt);
-
     stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PLAYER_CURRENCY);
     stmt->setUInt64(0, lowGuid);
     res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_CURRENCY, stmt);
@@ -368,6 +364,22 @@ bool LoginQueryHolder::Initialize()
     stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_CHARACTER_BANK_TAB_SETTINGS);
     stmt->setUInt64(0, lowGuid);
     res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_BANK_TAB_SETTINGS, stmt);
+
+    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PERKS_CURRENCY);
+    stmt->setUInt64(0, lowGuid);
+    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_PERKS_CURRENCY, stmt);
+
+    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PERKS_PURCHASES);
+    stmt->setUInt64(0, lowGuid);
+    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_PERKS_PURCHASES, stmt);
+
+    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PERKS_FROZEN);
+    stmt->setUInt64(0, lowGuid);
+    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_PERKS_FROZEN, stmt);
+
+    stmt = CharacterDatabase.GetPreparedStatement(CHAR_SEL_PERKS_MILESTONES);
+    stmt->setUInt64(0, lowGuid);
+    res &= SetPreparedQuery(PLAYER_LOGIN_QUERY_LOAD_PERKS_MILESTONES, stmt);
 
     return res;
 }
@@ -1364,6 +1376,9 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
 
     SendFeatureSystemStatus();
 
+    SendPerksAnimToggleKillSwitch();
+    SendPerksProgramActivityUpdate();
+
     // Send MOTD
     {
         WorldPackets::System::MOTD motd;
@@ -1552,7 +1567,6 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
         pCurrChar->ResetTalents(true);
         pCurrChar->ResetTalentSpecialization();
         pCurrChar->SendTalentsInfoData(); // original talents send already in to SendInitialPacketsBeforeAddToMap, resend reset state
-        SendNotification(LANG_RESET_TALENTS);
     }
 
     bool firstLogin = pCurrChar->HasAtLoginFlag(AT_LOGIN_FIRST);
@@ -2368,11 +2382,30 @@ void WorldSession::HandleCharRaceOrFactionChangeCallback(std::shared_ptr<WorldPa
     uint16 atLoginFlags = fields[0].GetUInt16();
     std::string knownTitlesStr = fields[1].GetString();
     uint32 groupId             = fields[2].GetUInt32();
+    uint32 mapId               = fields[3].GetUInt16();
 
     uint16 usedLoginFlag = (factionChangeInfo->FactionChange ? AT_LOGIN_CHANGE_FACTION : AT_LOGIN_CHANGE_RACE);
     if (!(atLoginFlags & usedLoginFlag))
     {
         SendCharFactionChange(CHAR_CREATE_ERROR, factionChangeInfo.get());
+        return;
+    }
+
+    if (level < 10)
+    {
+        SendCharFactionChange(CHAR_CREATE_ERROR, factionChangeInfo.get());
+        return;
+    }
+
+    if (playerClass == CLASS_DEATH_KNIGHT && (level < 60 || mapId == 609))
+    {
+        SendCharFactionChange(CHAR_CREATE_RESTRICTED_RACECLASS, factionChangeInfo.get());
+        return;
+    }
+
+    if (MapEntry const* mapEntry = sMapStore.LookupEntry(mapId); mapEntry && mapEntry->GetFlags().HasFlag(MapFlags::NoRaceChangeOnThisMap))
+    {
+        SendCharFactionChange(CHAR_CREATE_RESTRICTED_RACECLASS, factionChangeInfo.get());
         return;
     }
 
@@ -3171,4 +3204,24 @@ void WorldSession::SendUndeleteCharacterResponse(CharacterUndeleteResult result,
     response.Result = result;
 
     SendPacket(response.Write());
+}
+
+void WorldSession::HandleConvertTimerunningCharacter(WorldPackets::Character::ConvertTimerunningCharacter& convertTimerunningCharacter)
+{
+    // Look up the target character's current season; verify it belongs to this account.
+    CharacterCacheEntry const* characterInfo = sCharacterCache->GetCharacterCacheByGuid(convertTimerunningCharacter.CharacterGuid);
+    if (!characterInfo || characterInfo->AccountId != GetAccountId())
+        return;
+
+    // Convert: clear `timerunningSeasonId` so the character is no longer flagged as a timerunning alt.
+    // Notify the client of the previous season so the UI can complete its transition flow.
+    // TODO: remove timerunning-specific items (entries 2905, 4579) and post-conversion content tuning.
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_UPD_CHAR_TIMERUNNING_SEASON);
+    stmt->setUInt32(0, 0);
+    stmt->setUInt64(1, convertTimerunningCharacter.CharacterGuid.GetCounter());
+    CharacterDatabase.Execute(stmt);
+
+    WorldPackets::Misc::TimerunningSeasonEnded ended;
+    ended.SeasonID = 0;  // post-conversion: not in any season
+    SendPacket(ended.Write());
 }

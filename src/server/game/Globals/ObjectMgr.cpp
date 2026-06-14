@@ -3398,7 +3398,7 @@ void ObjectMgr::LoadItemTemplateAddon()
     uint32 oldMSTime = getMSTime();
     uint32 count = 0;
 
-    QueryResult result = WorldDatabase.Query("SELECT Id, FlagsCu, FoodType, MinMoneyLoot, MaxMoneyLoot, SpellPPMChance, RandomBonusListTemplateId, QuestLogItemId FROM item_template_addon");
+    QueryResult result = WorldDatabase.Query("SELECT Id, FlagsCu, FoodType, MinMoneyLoot, MaxMoneyLoot, ScrappingLootId, SpellPPMChance, RandomBonusListTemplateId, QuestLogItemId FROM item_template_addon");
     if (result)
     {
         do
@@ -3423,9 +3423,10 @@ void ObjectMgr::LoadItemTemplateAddon()
             itemTemplate->FoodType = fields[2].GetUInt8();
             itemTemplate->MinMoneyLoot = minMoneyLoot;
             itemTemplate->MaxMoneyLoot = maxMoneyLoot;
-            itemTemplate->SpellPPMRate = fields[5].GetFloat();
-            itemTemplate->RandomBonusListTemplateId = fields[6].GetUInt32();
-            itemTemplate->QuestLogItemId = fields[7].GetInt32();
+            itemTemplate->ScrappingLootId = fields[5].GetUInt32();
+            itemTemplate->SpellPPMRate = fields[6].GetFloat();
+            itemTemplate->RandomBonusListTemplateId = fields[7].GetUInt32();
+            itemTemplate->QuestLogItemId = fields[8].GetInt32();
             ++count;
         } while (result->NextRow());
     }
@@ -12363,24 +12364,16 @@ std::string ObjectMgr::GetPhaseName(uint32 phaseId) const
 
 ItemScrappingLoot const* ObjectMgr::GetItemScrappingLoot(Item* item) const
 {
-    for (auto& itemScrappingloot : _itemScrappingLootStore)
-    {
-        ItemTemplate const* iT = item->GetTemplate();
-        if (itemScrappingloot.Class != iT->GetClass())
-            continue;
-        if (!(itemScrappingloot.Subclass & 1 << iT->GetSubClass()))
-            continue;
-        if (itemScrappingloot.InventoryType != -1 && !(itemScrappingloot.InventoryType & 1 << iT->GetInventoryType()))
-            continue;
-        if (itemScrappingloot.MinLevel > item->GetItemLevel(item->GetOwner()))
-            continue;
-        if (itemScrappingloot.MaxLevel < item->GetItemLevel(item->GetOwner()))
-            continue;
-        if (itemScrappingloot.Quality != -1 && itemScrappingloot.Quality != int32(iT->GetQuality()))
-            continue;
-        if (itemScrappingloot.IsCrafted != -1 && ((itemScrappingloot.IsCrafted == 1) == !(ITEM_FLAG_NO_CREATOR)))
-            continue;
-        return &itemScrappingloot;
-    }
+    if (!item)
+        return nullptr;
+
+    uint32 lootId = item->GetTemplate()->ScrappingLootId;
+    if (!lootId)
+        return nullptr;
+
+    for (auto const& entry : _itemScrappingLootStore)
+        if (entry.Id == lootId)
+            return &entry;
+
     return nullptr;
 }

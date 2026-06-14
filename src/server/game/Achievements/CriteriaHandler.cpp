@@ -38,6 +38,7 @@
 #include "MapManager.h"
 #include "MapUtils.h"
 #include "ObjectMgr.h"
+#include "PerksProgramMgr.h"
 #include "PhasingHandler.h"
 #include "Player.h"
 #include "QuestMgr.h"
@@ -881,7 +882,22 @@ void CriteriaHandler::UpdateCriteria(Criteria const* criteria, uint64 miscValue1
     for (CriteriaTree const* tree : *trees)
     {
         if (IsCompletedCriteriaTree(tree))
+        {
             CompletedCriteriaTree(tree, referencePlayer);
+
+            // Perks Program milestone hook: check if this criteria tree
+                // corresponds to a threshold milestone activity for the current month.
+            if (referencePlayer)
+            {
+                if (int32 milestoneActivityID = sPerksProgramMgr->GetThresholdActivityForCriteriaTree(tree->ID))
+                    if (!referencePlayer->HasPerksMilestone(milestoneActivityID))
+                    {
+                        referencePlayer->AddPerksMilestone(milestoneActivityID);
+                        if (referencePlayer->GetSession())
+                            referencePlayer->GetSession()->SendPerksProgramActivityComplete(milestoneActivityID);
+                    }
+            }
+        }
 
         AfterCriteriaTreeUpdate(tree, referencePlayer);
     }

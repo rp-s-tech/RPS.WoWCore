@@ -361,7 +361,6 @@ class TC_GAME_API Item : public Object
 
         bool hasQuest(uint32 quest_id) const override { return GetTemplate()->GetStartQuest() == quest_id; }
         bool hasInvolvedQuest(uint32 /*quest_id*/) const override { return false; }
-        bool IsPotion() const { return GetTemplate()->IsPotion(); }
         bool IsVellum() const { return GetTemplate()->IsVellum(); }
         bool IsConjuredConsumable() const { return GetTemplate()->IsConjuredConsumable(); }
         uint32 GetQuality() const { return _bonusData.Quality; }
@@ -371,6 +370,7 @@ class TC_GAME_API Item : public Object
         int32 GetRequiredLevel() const;
 		int32 GetItemStatType(uint32 index) const;
         float GetItemStatValue(uint32 index, Player const* owner) const;
+        float GetItemStatValue(uint32 index, uint32 itemLevel) const;
         uint32 GetSocketColor(uint32 index) const { ASSERT(index < MAX_ITEM_PROTO_SOCKETS); return _bonusData.SocketColor[index]; }
         uint32 GetAppearanceModId() const { return m_itemData->ItemAppearanceModID; }
         void SetAppearanceModId(uint32 appearanceModId) { SetUpdateFieldValue(m_values.ModifyValue(&Item::m_itemData).ModifyValue(&UF::ItemData::ItemAppearanceModID), appearanceModId); }

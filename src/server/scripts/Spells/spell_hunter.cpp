@@ -696,8 +696,12 @@ class spell_hun_lock_and_load : public AuraScript
         return ValidateSpellInfo({ SPELL_HUNTER_LOCK_AND_LOAD });
     }
 
-    static bool CheckProc(AuraScript const&, AuraEffect const* aurEff, ProcEventInfo const& /*eventInfo*/)
+    static bool CheckProc(AuraScript const&, AuraEffect const* aurEff, ProcEventInfo const& eventInfo)
     {
+        SpellInfo const* spellInfo = eventInfo.GetSpellInfo();
+        if (!spellInfo || spellInfo->Id != 75)
+            return false;
+
         return roll_chance(aurEff->GetAmount());
     }
 
@@ -726,7 +730,7 @@ class spell_hun_manhunter : public AuraScript
 
     static bool CheckProc(AuraScript const&, ProcEventInfo const& eventInfo)
     {
-        return eventInfo.GetProcTarget()->IsPlayer();
+        return eventInfo.GetActionTarget()->IsPlayer();
     }
 
     static void HandleEffectProc(AuraScript const&, AuraEffect const* aurEff, ProcEventInfo const& eventInfo)

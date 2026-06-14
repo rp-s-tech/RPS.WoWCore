@@ -181,7 +181,10 @@ namespace LuaItem
      */
     int IsPotion(Eluna* E, Item* item)
     {
-        E->Push(item->IsPotion());
+        if (item->GetTemplate()->GetClass() == ITEM_CLASS_CONSUMABLE && item->GetTemplate()->GetSubClass() == ITEM_SUBCLASS_POTION)
+            E->Push(true);
+        else
+            E->Push(false);
         return 1;
     }
 

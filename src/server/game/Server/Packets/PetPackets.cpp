@@ -213,8 +213,17 @@ WorldPacket const* PetActionFeedback::Write()
 
 WorldPacket const* PetActionSound::Write()
 {
-    _worldPacket << PetGUID;
+    _worldPacket << UnitGUID;
     _worldPacket << int32(Action);
+
+    return &_worldPacket;
+}
+
+WorldPacket const* PetDismissSound::Write()
+{
+    _worldPacket << UnitGUID;
+    _worldPacket << int32(CreatureDisplayInfoID);
+    _worldPacket << ModelPosition;
 
     return &_worldPacket;
 }
@@ -232,15 +241,6 @@ WorldPacket const* PetMode::Write()
     _worldPacket << uint8(CommandState);
     _worldPacket << uint16(Flag);
     _worldPacket << uint8(ReactState);
-
-    return &_worldPacket;
-}
-
-WorldPacket const* PetDismissSound::Write()
-{
-    _worldPacket << PetGUID;
-    _worldPacket << uint32(DisplayID);
-    _worldPacket << ModelPosition;
 
     return &_worldPacket;
 }

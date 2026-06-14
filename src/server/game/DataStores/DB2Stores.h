@@ -228,6 +228,19 @@ TC_GAME_API extern DB2Storage<MythicPlusSeasonEntry>                sMythicPlusS
 TC_GAME_API extern DB2Storage<OverrideSpellDataEntry>               sOverrideSpellDataStore;
 TC_GAME_API extern DB2Storage<ParagonReputationEntry>               sParagonReputationStore;
 TC_GAME_API extern DB2Storage<PerksActivityEntry>                   sPerksActivityStore;
+TC_GAME_API extern DB2Storage<PerksActivityThresholdEntry>          sPerksActivityThresholdStore;
+TC_GAME_API extern DB2Storage<PerksActivityThresholdGroupEntry>     sPerksActivityThresholdGroupStore;
+TC_GAME_API extern DB2Storage<PerksActivityXIntervalEntry>          sPerksActivityXIntervalStore;
+TC_GAME_API extern DB2Storage<PerksActivityConditionEntry>          sPerksActivityConditionStore;
+TC_GAME_API extern DB2Storage<PerksActivityTagEntry>                sPerksActivityTagStore;
+TC_GAME_API extern DB2Storage<PerksActivityXHolidaysEntry>          sPerksActivityXHolidaysStore;
+TC_GAME_API extern DB2Storage<PerksActivityXTagEntry>               sPerksActivityXTagStore;
+TC_GAME_API extern DB2Storage<PerksUIThemeEntry>                    sPerksUIThemeStore;
+TC_GAME_API extern DB2Storage<PerksVendorCategoryEntry>             sPerksVendorCategoryStore;
+TC_GAME_API extern DB2Storage<PerksVendorItemEntry>                 sPerksVendorItemStore;
+TC_GAME_API extern DB2Storage<PerksVendorItemUIGroupEntry>          sPerksVendorItemUIGroupStore;
+TC_GAME_API extern DB2Storage<PerksVendorItemUIInfoEntry>           sPerksVendorItemUIInfoStore;
+TC_GAME_API extern DB2Storage<PerksVendorItemXIntervalEntry>        sPerksVendorItemXIntervalStore;
 TC_GAME_API extern DB2Storage<PhaseEntry>                           sPhaseStore;
 TC_GAME_API extern DB2Storage<PlayerConditionEntry>                 sPlayerConditionStore;
 TC_GAME_API extern DB2Storage<PlayerDataElementAccountEntry>        sPlayerDataElementAccountStore;
@@ -353,6 +366,7 @@ TC_GAME_API extern DB2Storage<TransmogSetItemEntry>                 sTransmogSet
 TC_GAME_API extern DB2Storage<TransportAnimationEntry>              sTransportAnimationStore;
 TC_GAME_API extern DB2Storage<TransportRotationEntry>               sTransportRotationStore;
 TC_GAME_API extern DB2Storage<UiMapEntry>                           sUiMapStore;
+TC_GAME_API extern DB2Storage<UIChromieTimeExpansionInfoEntry>      sUIChromieTimeExpansionInfoStore;
 TC_GAME_API extern DB2Storage<UISplashScreenEntry>                  sUISplashScreenStore;
 TC_GAME_API extern DB2Storage<UnitConditionEntry>                   sUnitConditionStore;
 TC_GAME_API extern DB2Storage<UnitPowerBarEntry>                    sUnitPowerBarStore;

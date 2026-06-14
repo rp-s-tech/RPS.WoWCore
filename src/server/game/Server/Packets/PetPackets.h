@@ -266,8 +266,20 @@ namespace WorldPackets
 
             WorldPacket const* Write() override;
 
-            ObjectGuid PetGUID;
+            ObjectGuid UnitGUID;
             int32 Action = 0;
+        };
+
+        class PetDismissSound final : public ServerPacket
+        {
+        public:
+            PetDismissSound() : ServerPacket(SMSG_PET_DISMISS_SOUND, 18 + 4 + 12) { }
+
+            WorldPacket const* Write() override;
+
+            ObjectGuid UnitGUID;
+            int32 CreatureDisplayInfoID = 0;
+            TaggedPosition<Position::XYZ> ModelPosition;
         };
 
         class PetTameFailure final : public ServerPacket
@@ -311,18 +323,6 @@ namespace WorldPackets
             PetClearSpells() : ServerPacket(SMSG_PET_CLEAR_SPELLS, 0) {}
 
             WorldPacket const* Write() override { return &_worldPacket; }
-        };
-
-        class PetDismissSound final : public ServerPacket
-        {
-        public:
-            PetDismissSound() : ServerPacket(SMSG_PET_DISMISS_SOUND) {}
-
-            WorldPacket const* Write() override;
-
-            ObjectGuid PetGUID;
-            uint32 DisplayID = 0;
-            TaggedPosition<Position::XYZ> ModelPosition;
         };
 
         class SetPetFavorite final : public ClientPacket
