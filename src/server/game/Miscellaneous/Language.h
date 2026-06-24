@@ -1254,6 +1254,34 @@ enum TrinityStrings
     LANG_YOU_CHANGE_POWER                         = 11019,
     LANG_YOUR_POWER_CHANGED                       = 11020,
     LANG_INVALID_POWER_NAME                       = 11021,
+
+    LANG_COMMAND_POI_HELP                         = 11022,
+    LANG_COMMAND_POI_CREATE_HELP                  = 11023,
+    LANG_COMMAND_POI_DELETE_HELP                  = 11024,
+    LANG_COMMAND_POI_SYNC_HELP                    = 11025,
+    LANG_COMMAND_POI_SET_NAME_HELP                = 11026,
+    LANG_COMMAND_POI_SET_DESCRIPTION_HELP         = 11027,
+    LANG_COMMAND_POI_SET_POSITION_HELP            = 11028,
+    LANG_COMMAND_POI_SET_TYPE_HELP                = 11029,
+    LANG_COMMAND_POI_SET_OWNER_PLAYER_HELP        = 11030,
+    LANG_COMMAND_POI_SET_OWNER_ORG_HELP           = 11031,
+    LANG_COMMAND_POI_SET_OWNER_SYSTEM_HELP        = 11032,
+    LANG_COMMAND_POI_SET_OWNER_NPC_HELP           = 11033,
+
+    LANG_COMMAND_POI_CREATED                      = 11034,
+    LANG_COMMAND_POI_DELETED                      = 11035,
+    LANG_COMMAND_POI_SYNCED                       = 11036,
+    LANG_COMMAND_POI_UPDATED                      = 11037,
+    LANG_COMMAND_POI_INVALID_TYPE                 = 11038,
+    LANG_COMMAND_POI_SET_APPLY_HELP               = 11039,
+
+    LANG_COMMAND_BATTLE_HELP                      = 11046,
+    LANG_COMMAND_NPCSTAT_HELP                     = 11047,
+    LANG_COMMAND_NN_CORE_HELP                     = 11048,
+    LANG_COMMAND_NPCROLL_HELP                     = 11056,
+    LANG_COMMAND_WEAPON_HELP                      = 11057,
+    LANG_COMMAND_NPCSAVE_HELP                     = 11058,
+
     LANG_RANDOM_MESSAGE                           = 65002, // %s
     LANG_WP_MOVE_1                                = 65003, // WP MOVE DONE 1 WALK
     LANG_WP_MOVE_2                                = 65004, // WP MOVE DONE 2 RUN

@@ -11,9 +11,11 @@
 #include "RestMgr.h"
 #include "ChatPackets.h"
 #include "LuaValue.h"
+#include "MiscPackets.h"
 #include "NPCPackets.h"
 #include "PartyPackets.h"
 #include "Unit.h"
+#include "Weather.h"
 #include <boost/callable_traits/args.hpp>
 
 /***
@@ -3937,6 +3939,22 @@ namespace LuaPlayer
         return 0;
     }
 
+    /**
+     * Sends a local weather packet to the player.
+     *
+     * @param uint32 weatherType : WeatherState value (0 = fine, 1 = fog, 3 = light rain, etc.)
+     * @param float intensity = 0.0f : weather intensity (0.0 - 1.0)
+     */
+    int SetLocalWeather(Eluna* E, Player* player)
+    {
+        uint32 weatherType = E->CHECKVAL<uint32>(2);
+        float intensity = E->CHECKVAL<float>(3, 0.0f);
+
+        WorldPackets::Misc::Weather weather(static_cast<WeatherState>(weatherType), intensity, true);
+        player->SendDirectMessage(weather.Write());
+        return 0;
+    }
+
     ElunaRegister<Player> PlayerMethods[] =
     {
         // Getters
@@ -4110,6 +4128,7 @@ namespace LuaPlayer
         { "IsRecruited", &LuaPlayer::IsRecruited },
         { "AddItemAppearance", &LuaPlayer::AddItemAppearance },
         { "AddTransmogSet", &LuaPlayer::AddTransmogSet },
+        { "SetLocalWeather", &LuaPlayer::SetLocalWeather },
 
         // Gossip
         { "GossipMenuAddItem", &LuaPlayer::GossipMenuAddItem },
