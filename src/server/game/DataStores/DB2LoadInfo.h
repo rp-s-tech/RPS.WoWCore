@@ -1041,6 +1041,142 @@ struct ChrClassesXPowerTypesLoadInfo
     static constexpr DB2LoadInfo Instance{ Fields, 3, &ChrClassesXPowerTypesMeta::Instance, HOTFIX_SEL_CHR_CLASSES_X_POWER_TYPES };
 };
 
+struct ChrCustomizationLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[10] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = false, .Type = FT_STRING, .Name = "Name" },
+        { .IsSigned = true, .Type = FT_BYTE, .Name = "Sex" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "BaseSection" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "UiCustomizationType" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Flags" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ComponentSection1" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ComponentSection2" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ComponentSection3" },
+        { .IsSigned = false, .Type = FT_INT, .Name = "RaceID" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 10, &ChrCustomizationMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION };
+};
+
+struct ChrCustomizationBoneSetLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[3] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "BoneFileDataID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ModelFileDataID" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 3, &ChrCustomizationBoneSetMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_BONE_SET };
+};
+
+struct ChrCustomizationCategoryLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[9] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = false, .Type = FT_STRING, .Name = "CategoryName" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CustomizeIcon" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CustomizeIconSelected" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "OrderIndex" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CameraZoomLevel" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Flags" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "SpellShapeshiftFormID" },
+        { .IsSigned = false, .Type = FT_FLOAT, .Name = "CameraDistanceOffset" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 9, &ChrCustomizationCategoryMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_CATEGORY };
+};
+
+struct ChrCustomizationCondModelLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[6] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CreatureModelDataID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34081_001_1" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34081_001_2" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34081_001_3" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34081_001_4" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 6, &ChrCustomizationCondModelMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_COND_MODEL };
+};
+
+struct ChrCustomizationConversionLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[9] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_BYTE, .Name = "ChrRacesID" },
+        { .IsSigned = true, .Type = FT_BYTE, .Name = "Sex" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "OptionID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Data" },
+        { .IsSigned = false, .Type = FT_INT, .Name = "ChrCustomizationChoiceID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "DependentOptionID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "DependentData" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_3_4_0_45166_007" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 9, &ChrCustomizationConversionMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_CONVERSION };
+};
+
+struct ChrCustomizationGlyphPetLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[7] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ChrCustomizationChoiceID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ChrCustomizationOptionID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CreatureID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CreatureID2" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CreatureDisplayInfoID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CreatureDisplayInfoID2" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 7, &ChrCustomizationGlyphPetMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_GLYPH_PET };
+};
+
+struct ChrCustomizationSkinnedModelLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[6] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "CollectionsFileDataID" },
+        { .IsSigned = true, .Type = FT_BYTE, .Name = "GeosetType" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "GeosetID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Modifier" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Flags" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 6, &ChrCustomizationSkinnedModelMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_SKINNED_MODEL };
+};
+
+struct ChrCustomizationVisReqLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[3] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "AllowedDisplayedItemSlots" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Flags" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 3, &ChrCustomizationVisReqMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_VIS_REQ };
+};
+
+struct ChrCustomizationVoiceLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[2] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_BYTE, .Name = "Field_10_0_0_44895_000" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 2, &ChrCustomizationVoiceMeta::Instance, HOTFIX_SEL_CHR_CUSTOMIZATION_VOICE };
+};
+
 struct ChrCustomizationChoiceLoadInfo
 {
     static constexpr DB2FieldMeta Fields[12] =

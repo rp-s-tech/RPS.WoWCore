@@ -378,6 +378,39 @@ void HotfixDatabaseConnection::DoPrepareStatements()
         " WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
     PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CLASSES_X_POWER_TYPES, "SELECT MAX(ID) + 1 FROM chr_classes_x_power_types", CONNECTION_SYNCH);
 
+    // ChrCustomization.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION, "SELECT ID, Name, Sex, BaseSection, UiCustomizationType, Flags, "
+        "ComponentSection1, ComponentSection2, ComponentSection3, RaceID FROM chr_customization"
+        " WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION, "SELECT MAX(ID) + 1 FROM chr_customization", CONNECTION_SYNCH);
+    PREPARE_LOCALE_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION, "SELECT ID, Name_lang FROM chr_customization_locale"
+        " WHERE (`VerifiedBuild` > 0) = ? AND locale = ?", CONNECTION_SYNCH);
+
+    // ChrCustomizationBoneSet.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_BONE_SET, "SELECT ID, BoneFileDataID, ModelFileDataID"
+        " FROM chr_customization_bone_set WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_BONE_SET, "SELECT MAX(ID) + 1 FROM chr_customization_bone_set", CONNECTION_SYNCH);
+
+    // ChrCustomizationCategory.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_CATEGORY, "SELECT ID, CategoryName, CustomizeIcon, CustomizeIconSelected, "
+        "OrderIndex, CameraZoomLevel, Flags, SpellShapeshiftFormID, CameraDistanceOffset FROM chr_customization_category"
+        " WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_CATEGORY, "SELECT MAX(ID) + 1 FROM chr_customization_category", CONNECTION_SYNCH);
+    PREPARE_LOCALE_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_CATEGORY, "SELECT ID, CategoryName_lang FROM chr_customization_category_locale"
+        " WHERE (`VerifiedBuild` > 0) = ? AND locale = ?", CONNECTION_SYNCH);
+
+    // ChrCustomizationCondModel.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_COND_MODEL, "SELECT ID, CreatureModelDataID, Field_9_0_1_34081_001_1, "
+        "Field_9_0_1_34081_001_2, Field_9_0_1_34081_001_3, Field_9_0_1_34081_001_4 FROM chr_customization_cond_model"
+        " WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_COND_MODEL, "SELECT MAX(ID) + 1 FROM chr_customization_cond_model", CONNECTION_SYNCH);
+
+    // ChrCustomizationConversion.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_CONVERSION, "SELECT ID, ChrRacesID, Sex, OptionID, Data, "
+        "ChrCustomizationChoiceID, DependentOptionID, DependentData, Field_3_4_0_45166_007 FROM chr_customization_conversion"
+        " WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_CONVERSION, "SELECT MAX(ID) + 1 FROM chr_customization_conversion", CONNECTION_SYNCH);
+
     // ChrCustomizationChoice.db2
     PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_CHOICE, "SELECT Name, ID, ChrCustomizationOptionID, ChrCustomizationReqID, "
         "ChrCustomizationVisReqID, SortOrder, UiOrderIndex, Flags, AddedInPatch, SoundKitID, SwatchColor1, SwatchColor2 FROM chr_customization_choice"
@@ -402,6 +435,12 @@ void HotfixDatabaseConnection::DoPrepareStatements()
     PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_GEOSET, "SELECT ID, GeosetType, GeosetID, Modifier"
                                                                  " FROM chr_customization_geoset WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
     PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_GEOSET, "SELECT MAX(ID) + 1 FROM chr_customization_geoset", CONNECTION_SYNCH);
+
+    // ChrCustomizationGlyphPet.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_GLYPH_PET, "SELECT ID, ChrCustomizationChoiceID, ChrCustomizationOptionID, "
+        "CreatureID, CreatureID2, CreatureDisplayInfoID, CreatureDisplayInfoID2 FROM chr_customization_glyph_pet"
+        " WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_GLYPH_PET, "SELECT MAX(ID) + 1 FROM chr_customization_glyph_pet", CONNECTION_SYNCH);
 
     // ChrCustItemGeoModify.db2
     PrepareStatement(HOTFIX_SEL_CHR_CUST_ITEM_GEO_MODIFY, "SELECT ID, GeosetType, Original, Override"
@@ -432,6 +471,21 @@ void HotfixDatabaseConnection::DoPrepareStatements()
     PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_REQ_CHOICE, "SELECT ID, ChrCustomizationChoiceID, ChrCustomizationReqID"
         " FROM chr_customization_req_choice WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
     PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_REQ_CHOICE, "SELECT MAX(ID) + 1 FROM chr_customization_req_choice", CONNECTION_SYNCH);
+
+    // ChrCustomizationSkinnedModel.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_SKINNED_MODEL, "SELECT ID, CollectionsFileDataID, GeosetType, GeosetID, "
+        "Modifier, Flags FROM chr_customization_skinned_model WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_SKINNED_MODEL, "SELECT MAX(ID) + 1 FROM chr_customization_skinned_model", CONNECTION_SYNCH);
+
+    // ChrCustomizationVisReq.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_VIS_REQ, "SELECT ID, AllowedDisplayedItemSlots, Flags"
+        " FROM chr_customization_vis_req WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_VIS_REQ, "SELECT MAX(ID) + 1 FROM chr_customization_vis_req", CONNECTION_SYNCH);
+
+    // ChrCustomizationVoice.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CUSTOMIZATION_VOICE, "SELECT ID, Field_10_0_0_44895_000"
+        " FROM chr_customization_voice WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CUSTOMIZATION_VOICE, "SELECT MAX(ID) + 1 FROM chr_customization_voice", CONNECTION_SYNCH);
 
     // ChrModel.db2
     PrepareStatement(HOTFIX_SEL_CHR_MODEL, "SELECT FaceCustomizationOffset1, FaceCustomizationOffset2, FaceCustomizationOffset3, CustomizeOffset1, "

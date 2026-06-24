@@ -51,7 +51,7 @@ namespace RoleplayCore::NobleNext
         if (!creature)
             return;
 
-        creature->SetEmoteState(pose.Animation);
+        creature->SetEmoteState(static_cast<Emote>(pose.Animation));
         creature->SetObjectScale(pose.Size);
 
         if (pose.Mount)

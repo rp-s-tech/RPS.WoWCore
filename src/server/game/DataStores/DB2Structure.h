@@ -763,6 +763,92 @@ struct ChrClassesXPowerTypesEntry
     uint32 ClassID;
 };
 
+struct ChrCustomizationEntry
+{
+    uint32 ID;
+    LocalizedString Name;
+    int8 Sex;
+    int32 BaseSection;
+    int32 UiCustomizationType;
+    int32 Flags;
+    std::array<int32, 3> ComponentSection;
+    int32 RaceID;
+};
+
+struct ChrCustomizationBoneSetEntry
+{
+    uint32 ID;
+    int32 BoneFileDataID;
+    int32 ModelFileDataID;
+};
+
+struct ChrCustomizationCategoryEntry
+{
+    uint32 ID;
+    LocalizedString CategoryName;
+    int32 CustomizeIcon;
+    int32 CustomizeIconSelected;
+    int32 OrderIndex;
+    int32 CameraZoomLevel;
+    int32 Flags;
+    int32 SpellShapeshiftFormID;
+    float CameraDistanceOffset;
+};
+
+struct ChrCustomizationCondModelEntry
+{
+    uint32 ID;
+    int32 CreatureModelDataID;
+    std::array<int32, 4> Field_9_0_1_34081_001;
+};
+
+struct ChrCustomizationConversionEntry
+{
+    uint32 ID;
+    int8 ChrRacesID;
+    int8 Sex;
+    int32 OptionID;
+    int32 Data;
+    uint32 ChrCustomizationChoiceID;
+    int32 DependentOptionID;
+    int32 DependentData;
+    int32 Field_3_4_0_45166_007;
+};
+
+struct ChrCustomizationGlyphPetEntry
+{
+    uint32 ID;
+    int32 ChrCustomizationChoiceID;
+    int32 ChrCustomizationOptionID;
+    int32 CreatureID;
+    int32 CreatureID2;
+    int32 CreatureDisplayInfoID;
+    int32 CreatureDisplayInfoID2;
+};
+
+struct ChrCustomizationSkinnedModelEntry
+{
+    uint32 ID;
+    int32 CollectionsFileDataID;
+    int8 GeosetType;
+    int32 GeosetID;
+    int32 Modifier;
+    int32 Flags;
+};
+
+struct ChrCustomizationVisReqEntry
+{
+    uint32 ID;
+    int32 AllowedDisplayedItemSlots;
+    int32 Flags;
+};
+
+struct ChrCustomizationVoiceEntry
+{
+    uint32 ID;
+    int8 Field_10_0_0_44895_000;
+};
+
 struct ChrCustomizationChoiceEntry
 {
     LocalizedString Name;
