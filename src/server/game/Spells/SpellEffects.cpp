@@ -1008,7 +1008,7 @@ TeleportToOptions GetTeleportOptions(WorldObject const* caster, Unit const* unit
 
     if (targetDest._position.GetMapId() == unitTarget->GetMapId())
     {
-        options |= TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET;
+        options |= TELE_TO_NOT_LEAVE_COMBAT;
 
         if (unitTarget->GetTransGUID() == targetDest._transportGUID)
             options |= TELE_TO_NOT_LEAVE_TRANSPORT;
@@ -1122,7 +1122,7 @@ void Spell::EffectTeleportUnitsWithVisualLoadingScreen()
 
     if (effectInfo->MiscValueB)
         if (Player* playerTarget = unitTarget->ToPlayer())
-            playerTarget->SendDirectMessage(WorldPackets::Spells::SpellVisualLoadScreen(effectInfo->MiscValueB, effectInfo->MiscValue).Write());
+            playerTarget->SendDirectMessage(WorldPackets::Spells::SpellVisualLoadScreen(effectInfo->MiscValueB, Milliseconds(effectInfo->MiscValue)).Write());
 
     TeleportToOptions options = GetTeleportOptions(m_caster, unitTarget, m_destTargets[effectInfo->EffectIndex]);
     unitTarget->m_Events.AddEventAtOffset(new DelayedSpellTeleportEvent(unitTarget, targetDest, options, m_spellInfo->Id),
@@ -5012,7 +5012,7 @@ void Spell::EffectTitanGrip()
         return;
 
     if (m_caster->GetTypeId() == TYPEID_PLAYER)
-        m_caster->ToPlayer()->SetCanTitanGrip(true, uint32(effectInfo->MiscValue));
+        m_caster->ToPlayer()->SetCanTitanGrip(true, effectInfo->MiscValue, m_spellInfo->EquippedItemClass, m_spellInfo->EquippedItemSubClassMask);
 }
 
 void Spell::EffectRedirectThreat()

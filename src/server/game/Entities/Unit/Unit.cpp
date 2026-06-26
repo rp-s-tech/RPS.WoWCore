@@ -10109,6 +10109,11 @@ void Unit::SetLevel(uint8 lvl, bool sendUpdate/* = true*/)
     }
 }
 
+uint64 Unit::GetRaceMask() const
+{
+    return Trinity::RaceMask<uint64>::GetMaskForRace(GetRace()).RawValue[0];
+}
+
 void Unit::SetHealth(uint64 val)
 {
     if (getDeathState() == JUST_DIED || getDeathState() == CORPSE)
@@ -13145,7 +13150,7 @@ void Unit::NearTeleportTo(TeleportLocation const& target, bool casting)
 {
     DisableSpline();
     if (GetTypeId() == TYPEID_PLAYER)
-        ToPlayer()->TeleportTo(target, TELE_TO_NOT_LEAVE_TRANSPORT | TELE_TO_NOT_LEAVE_COMBAT | TELE_TO_NOT_UNSUMMON_PET | (casting ? TELE_TO_SPELL : TELE_TO_NONE));
+        ToPlayer()->TeleportTo(target, TELE_TO_NOT_LEAVE_TRANSPORT | TELE_TO_NOT_LEAVE_COMBAT | (casting ? TELE_TO_SPELL : TELE_TO_NONE));
     else
     {
         SendTeleportPacket(target);
