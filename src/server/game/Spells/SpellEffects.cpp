@@ -592,9 +592,6 @@ void Spell::EffectDummy()
         }
     }
 
-    // normal DB scripted effect
-    TC_LOG_DEBUG("spells", "Spell ScriptStart spellid {} in EffectDummy({})", m_spellInfo->Id, effectInfo->EffectIndex);
-    m_caster->GetMap()->ScriptsStart(sSpellScripts, uint32(m_spellInfo->Id | (effectInfo->EffectIndex << 24)), m_caster, unitTarget);
 #ifdef ELUNA
     if (Eluna* e = m_caster->GetEluna())
     {
@@ -1989,6 +1986,7 @@ void Spell::EffectSummonType()
                     // Summons a vehicle, but doesn't force anyone to enter it (see SUMMON_CATEGORY_VEHICLE)
                 case SummonTitle::Vehicle:
                 case SummonTitle::Mount:
+                case SummonTitle::Lightwell:
                 {
                     if (!unitCaster)
                         return;
@@ -1996,7 +1994,6 @@ void Spell::EffectSummonType()
                     summon = unitCaster->GetMap()->SummonCreature(entry, *destTarget, properties, duration, unitCaster, m_spellInfo->Id, 0, privateObjectOwner);
                     break;
                 }
-                case SummonTitle::Lightwell:
                 case SummonTitle::Totem:
                 {
                     if (!unitCaster)
@@ -3261,10 +3258,6 @@ void Spell::EffectScriptEffect()
             break;
         }
     }
-
-    // normal DB scripted effect
-    TC_LOG_DEBUG("spells", "Spell ScriptStart spellid {} in EffectScriptEffect({})", m_spellInfo->Id, effectInfo->EffectIndex);
-    m_caster->GetMap()->ScriptsStart(sSpellScripts, uint32(m_spellInfo->Id | (effectInfo->EffectIndex << 24)), m_caster, unitTarget);
 }
 
 void Spell::EffectSanctuary()
