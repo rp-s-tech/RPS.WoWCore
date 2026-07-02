@@ -491,8 +491,25 @@ void HotfixDatabaseConnection::DoPrepareStatements()
     PrepareStatement(HOTFIX_SEL_CHR_MODEL, "SELECT FaceCustomizationOffset1, FaceCustomizationOffset2, FaceCustomizationOffset3, CustomizeOffset1, "
         "CustomizeOffset2, CustomizeOffset3, ID, Sex, DisplayID, CharComponentTextureLayoutID, Flags, SkeletonFileDataID, ModelFallbackChrModelID, "
         "TextureFallbackChrModelID, HelmVisFallbackChrModelID, CustomizeScale, CustomizeFacing, CameraDistanceOffset, BarberShopCameraOffsetScale, "
-        "BarberShopCameraHeightOffsetScale, BarberShopCameraRotationOffset FROM chr_model WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+        "BarberShopCameraRotationFacing, BarberShopCameraRotationOffset FROM chr_model WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
     PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_MODEL, "SELECT MAX(ID) + 1 FROM chr_model", CONNECTION_SYNCH);
+
+    // ChrClassUIChrModelInfo.db2
+    PrepareStatement(HOTFIX_SEL_CHR_CLASS_UI_CHR_MODEL_INFO, "SELECT ID, ChrModel_9_0_1_35522_001Override1, ChrModel_9_0_1_35522_001Override2, "
+        "ChrModel_9_0_1_35522_001Override3, ChrModelID, ChrClassesID, ChrCreateFacingOverride, Field_11_1_0_58731_004"
+        " FROM chr_class_ui_chr_model_info WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_CLASS_UI_CHR_MODEL_INFO, "SELECT MAX(ID) + 1 FROM chr_class_ui_chr_model_info", CONNECTION_SYNCH);
+
+    // ChrModelMaterial.db2
+    PrepareStatement(HOTFIX_SEL_CHR_MODEL_MATERIAL, "SELECT ID, CharComponentTextureLayoutsID, TextureType, Width, Height, Flags, "
+        "Field_9_0_1_34615_006 FROM chr_model_material WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_MODEL_MATERIAL, "SELECT MAX(ID) + 1 FROM chr_model_material", CONNECTION_SYNCH);
+
+    // ChrModelTextureLayer.db2
+    PrepareStatement(HOTFIX_SEL_CHR_MODEL_TEXTURE_LAYER, "SELECT ID, TextureType, Layer, Flags, BlendMode, TextureSectionTypeBitMask, "
+        "TextureSectionTypeBitMask2, Field_9_0_1_34365_0061, Field_9_0_1_34365_0062, Field_9_0_1_34365_0063, ChrModelTextureTargetID1, "
+        "ChrModelTextureTargetID2, CharComponentTextureLayoutsID FROM chr_model_texture_layer WHERE (`VerifiedBuild` > 0) = ?", CONNECTION_SYNCH);
+    PREPARE_MAX_ID_STMT(HOTFIX_SEL_CHR_MODEL_TEXTURE_LAYER, "SELECT MAX(ID) + 1 FROM chr_model_texture_layer", CONNECTION_SYNCH);
 
     // ChrRaceRacialAbility.db2
     PrepareStatement(HOTFIX_SEL_CHR_RACE_RACIAL_ABILITY, "SELECT ID, Name, Description, DescriptionShort, Icon, `Order`, ChrRacesID"

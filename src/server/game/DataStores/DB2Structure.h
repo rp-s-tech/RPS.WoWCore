@@ -971,8 +971,43 @@ struct ChrModelEntry
     float CustomizeFacing;
     float CameraDistanceOffset;
     float BarberShopCameraOffsetScale;
-    float BarberShopCameraHeightOffsetScale; // applied after BarberShopCameraOffsetScale
+    float BarberShopCameraRotationFacing;
     float BarberShopCameraRotationOffset;
+};
+
+struct ChrClassUIChrModelInfoEntry
+{
+    uint32 ID;
+    std::array<float, 3> ChrModel_9_0_1_35522_001Override;
+    int32 ChrModelID;
+    int8 ChrClassesID;
+    float ChrCreateFacingOverride;
+    int32 Field_11_1_0_58731_004;
+};
+
+struct ChrModelMaterialEntry
+{
+    uint32 ID;
+    uint32 CharComponentTextureLayoutsID;
+    int32 TextureType;
+    int32 Width;
+    int32 Height;
+    int32 Flags;
+    int32 Field_9_0_1_34615_006;
+};
+
+struct ChrModelTextureLayerEntry
+{
+    uint32 ID;
+    int32 TextureType;
+    int32 Layer;
+    int32 Flags;
+    int32 BlendMode;
+    int32 TextureSectionTypeBitMask;
+    int32 TextureSectionTypeBitMask2;
+    std::array<int32, 3> Field_9_0_1_34365_006;
+    std::array<int32, 2> ChrModelTextureTargetID;
+    uint32 CharComponentTextureLayoutsID;
 };
 
 struct ChrRaceRacialAbilityEntry

@@ -117,6 +117,9 @@ DB2Storage<ChrCustomizationSkinnedModelEntry>   sChrCustomizationSkinnedModelSto
 DB2Storage<ChrCustomizationVisReqEntry>       sChrCustomizationVisReqStore("ChrCustomizationVisReq.db2", &ChrCustomizationVisReqLoadInfo::Instance);
 DB2Storage<ChrCustomizationVoiceEntry>          sChrCustomizationVoiceStore("ChrCustomizationVoice.db2", &ChrCustomizationVoiceLoadInfo::Instance);
 DB2Storage<ChrModelEntry>                       sChrModelStore("ChrModel.db2", &ChrModelLoadInfo::Instance);
+DB2Storage<ChrClassUIChrModelInfoEntry>         sChrClassUIChrModelInfoStore("ChrClassUIChrModelInfo.db2", &ChrClassUIChrModelInfoLoadInfo::Instance);
+DB2Storage<ChrModelMaterialEntry>               sChrModelMaterialStore("ChrModelMaterial.db2", &ChrModelMaterialLoadInfo::Instance);
+DB2Storage<ChrModelTextureLayerEntry>           sChrModelTextureLayerStore("ChrModelTextureLayer.db2", &ChrModelTextureLayerLoadInfo::Instance);
 DB2Storage<ChrRaceRacialAbilityEntry>           sChrRaceRacialAbilityStore("ChrRaceRacialAbility.db2", &ChrRaceRacialAbilityLoadInfo::Instance);
 DB2Storage<ChrRaceXChrModelEntry>               sChrRaceXChrModelStore("ChrRaceXChrModel.db2", &ChrRaceXChrModelLoadInfo::Instance);
 DB2Storage<ChrRacesEntry>                       sChrRacesStore("ChrRaces.db2", &ChrRacesLoadInfo::Instance);
@@ -824,6 +827,9 @@ uint32 DB2Manager::LoadStores(std::string const& dataPath, LocaleConstant defaul
     LOAD_DB2(sChrCustomizationVisReqStore);
     LOAD_DB2(sChrCustomizationVoiceStore);
     LOAD_DB2(sChrModelStore);
+    LOAD_DB2(sChrClassUIChrModelInfoStore);
+    LOAD_DB2(sChrModelMaterialStore);
+    LOAD_DB2(sChrModelTextureLayerStore);
     LOAD_DB2(sChrRaceRacialAbilityStore);
     LOAD_DB2(sChrRaceXChrModelStore);
     LOAD_DB2(sChrRacesStore);

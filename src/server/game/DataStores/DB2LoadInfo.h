@@ -1350,11 +1350,66 @@ struct ChrModelLoadInfo
         { .IsSigned = false, .Type = FT_FLOAT, .Name = "CustomizeFacing" },
         { .IsSigned = false, .Type = FT_FLOAT, .Name = "CameraDistanceOffset" },
         { .IsSigned = false, .Type = FT_FLOAT, .Name = "BarberShopCameraOffsetScale" },
-        { .IsSigned = false, .Type = FT_FLOAT, .Name = "BarberShopCameraHeightOffsetScale" },
+        { .IsSigned = false, .Type = FT_FLOAT, .Name = "BarberShopCameraRotationFacing" },
         { .IsSigned = false, .Type = FT_FLOAT, .Name = "BarberShopCameraRotationOffset" },
     };
 
     static constexpr DB2LoadInfo Instance{ Fields, 21, &ChrModelMeta::Instance, HOTFIX_SEL_CHR_MODEL };
+};
+
+struct ChrClassUIChrModelInfoLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[8] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = false, .Type = FT_FLOAT, .Name = "ChrModel_9_0_1_35522_001Override1" },
+        { .IsSigned = false, .Type = FT_FLOAT, .Name = "ChrModel_9_0_1_35522_001Override2" },
+        { .IsSigned = false, .Type = FT_FLOAT, .Name = "ChrModel_9_0_1_35522_001Override3" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ChrModelID" },
+        { .IsSigned = true, .Type = FT_BYTE, .Name = "ChrClassesID" },
+        { .IsSigned = false, .Type = FT_FLOAT, .Name = "ChrCreateFacingOverride" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_11_1_0_58731_004" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 8, &ChrClassUIChrModelInfoMeta::Instance, HOTFIX_SEL_CHR_CLASS_UI_CHR_MODEL_INFO };
+};
+
+struct ChrModelMaterialLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[7] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = false, .Type = FT_INT, .Name = "CharComponentTextureLayoutsID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "TextureType" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Width" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Height" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Flags" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34615_006" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 7, &ChrModelMaterialMeta::Instance, HOTFIX_SEL_CHR_MODEL_MATERIAL };
+};
+
+struct ChrModelTextureLayerLoadInfo
+{
+    static constexpr DB2FieldMeta Fields[13] =
+    {
+        { .IsSigned = false, .Type = FT_INT, .Name = "ID" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "TextureType" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Layer" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Flags" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "BlendMode" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "TextureSectionTypeBitMask" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "TextureSectionTypeBitMask2" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34365_0061" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34365_0062" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "Field_9_0_1_34365_0063" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ChrModelTextureTargetID1" },
+        { .IsSigned = true, .Type = FT_INT, .Name = "ChrModelTextureTargetID2" },
+        { .IsSigned = false, .Type = FT_INT, .Name = "CharComponentTextureLayoutsID" },
+    };
+
+    static constexpr DB2LoadInfo Instance{ Fields, 13, &ChrModelTextureLayerMeta::Instance, HOTFIX_SEL_CHR_MODEL_TEXTURE_LAYER };
 };
 
 struct ChrRaceRacialAbilityLoadInfo

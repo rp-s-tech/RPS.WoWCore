@@ -92,6 +92,9 @@ TC_GAME_API extern DB2Storage<ChrCustomizationChoiceEntry>          sChrCustomiz
 TC_GAME_API extern DB2Storage<ChrCustomizationSkinnedModelEntry>    sChrCustomizationSkinnedModelStore;
 TC_GAME_API extern DB2Storage<ChrCustomizationVisReqEntry>          sChrCustomizationVisReqStore;
 TC_GAME_API extern DB2Storage<ChrCustomizationVoiceEntry>           sChrCustomizationVoiceStore;
+TC_GAME_API extern DB2Storage<ChrClassUIChrModelInfoEntry>        sChrClassUIChrModelInfoStore;
+TC_GAME_API extern DB2Storage<ChrModelMaterialEntry>              sChrModelMaterialStore;
+TC_GAME_API extern DB2Storage<ChrModelTextureLayerEntry>          sChrModelTextureLayerStore;
 TC_GAME_API extern DB2Storage<ChrRaceRacialAbilityEntry>            sChrRaceRacialAbilityStore;
 TC_GAME_API extern DB2Storage<ChrRacesEntry>                        sChrRacesStore;
 TC_GAME_API extern DB2Storage<ChrSpecializationEntry>               sChrSpecializationStore;
