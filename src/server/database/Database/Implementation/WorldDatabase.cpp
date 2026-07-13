@@ -99,13 +99,13 @@ void WorldDatabaseConnection::DoPrepareStatements()
     PrepareStatement(WORLD_REP_CREATURE_TEMPLATE, "REPLACE INTO creature_template (entry, name, subname, RequiredExpansion, faction, unit_class, type, movementId) VALUES (?, ?, ?, 0, 35, 1, 7, 100)", CONNECTION_ASYNC);
     PrepareStatement(WORLD_REP_CREATURE_TEMPLATE_MODEL, "REPLACE INTO creature_template_model (CreatureId, Idx, CreatureDisplayId, DisplayScale, Probability) VALUES (?, ?, ?, ?, 1)", CONNECTION_ASYNC);
     PrepareStatement(WORLD_REP_CREATURE_EQUIP_TEMPLATE, "REPLACE INTO creature_equip_template (CreatureId, ID, ItemID1, AppearanceModID1, ItemVisual1, ItemID2, AppearanceModID2, ItemVisual2, ItemID3, AppearanceModID3, ItemVisual3) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
-    PrepareStatement(WORLD_REP_DRESSNPC_OUTFIT, "REPLACE INTO creature_template_outfits (entry, race, class, gender, customizations, head, shoulders, body, chest, waist, legs, feet, wrists, hands, tabard, back, guildid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(WORLD_REP_DRESSNPC_OUTFIT, "REPLACE INTO creature_template_outfits (entry, race, class, gender, customizations, head, head_appearance, shoulders, shoulders_appearance, body, body_appearance, chest, chest_appearance, waist, waist_appearance, legs, legs_appearance, feet, feet_appearance, wrists, wrists_appearance, hands, hands_appearance, tabard, tabard_appearance, back, back_appearance, guildid) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
     PrepareStatement(WORLD_DEL_CREATURE_TEMPLATE, "DELETE FROM creature_template WHERE entry = ?", CONNECTION_ASYNC);
     PrepareStatement(WORLD_DEL_CREATURE_TEMPLATE_MODEL, "DELETE FROM creature_template_model WHERE CreatureID = ? AND Idx = ?", CONNECTION_ASYNC);
     PrepareStatement(WORLD_DEL_ALL_CREATURE_TEMPLATE_MODEL, "DELETE FROM creature_template_model WHERE CreatureID = ?", CONNECTION_ASYNC);
     PrepareStatement(WORLD_DEL_CREATURE_EQUIP_TEMPLATE, "DELETE FROM creature_equip_template WHERE CreatureID = ?", CONNECTION_ASYNC);
     PrepareStatement(WORLD_DEL_DRESSNPC_OUTFIT, "DELETE FROM creature_template_outfits WHERE entry = ?", CONNECTION_ASYNC);
-    PrepareStatement(WORLD_REP_CREATURE_TEMPLATE_ADDON, "REPLACE INTO creature_template_addon (entry, PathId, mount, emote, aiAnimKit, movementAnimKit, meleeAnimkit, visibilityDistanceType, auras) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(WORLD_REP_CREATURE_TEMPLATE_ADDON, "REPLACE INTO creature_template_addon (entry, PathId, mount, StandState, AnimTier, VisFlags, SheathState, PvPFlags, emote, aiAnimKit, movementAnimKit, meleeAnimKit, visibilityDistanceType, auras) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
     PrepareStatement(WORLD_DEL_CREATURE_TEMPLATE_ADDON, "DELETE FROM creature_template_addon WHERE entry = ?", CONNECTION_ASYNC);
 }
 

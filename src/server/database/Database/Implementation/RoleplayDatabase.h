@@ -35,6 +35,7 @@ enum RoleplayDatabaseStatements
     // DELETIONS
     Roleplay_DEL_CREATUREEXTRA,
     Roleplay_DEL_CUSTOMNPC,
+    Roleplay_DEL_CUSTOMNPCOWNER,
     Roleplay_DEL_SERVER_SETTINGS,
 
     // UPDATES
@@ -43,6 +44,7 @@ enum RoleplayDatabaseStatements
     // REPLACES
     Roleplay_REP_CREATUREEXTRA,
     Roleplay_REP_CUSTOMNPCDATA,
+    Roleplay_REP_CUSTOMNPCOWNER,
     Roleplay_REP_SERVER_SETTINGS,
 
     MAX_RoleplayDATABASE_STATEMENTS

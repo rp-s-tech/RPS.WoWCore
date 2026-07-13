@@ -31,6 +31,7 @@ void RoleplayDatabaseConnection::DoPrepareStatements()
     // DELETIONS
     PrepareStatement(Roleplay_DEL_CREATUREEXTRA, "DELETE FROM creature_extra WHERE guid = ?", CONNECTION_ASYNC);
     PrepareStatement(Roleplay_DEL_CUSTOMNPC, "DELETE FROM custom_npcs WHERE `Key` = ?", CONNECTION_ASYNC);
+    PrepareStatement(Roleplay_DEL_CUSTOMNPCOWNER, "DELETE FROM custom_npc_owners WHERE `Key` = ?", CONNECTION_ASYNC);
     PrepareStatement(Roleplay_DEL_SERVER_SETTINGS, "DELETE FROM server_settings WHERE setting_name IN ('static_hour', 'static_minute', 'time_freezed')", CONNECTION_ASYNC);
 
     // UPDATES
@@ -39,6 +40,7 @@ void RoleplayDatabaseConnection::DoPrepareStatements()
     // REPLACES
     PrepareStatement(Roleplay_REP_CREATUREEXTRA, "REPLACE INTO creature_extra (guid, scale, id_creator_bnet, id_creator_player, id_modifier_bnet, id_modifier_player, created, modified, phaseMask, displayLock, displayId, nativeDisplayId, genderLock, gender, swim, gravity, fly) VALUES (?, ?, ?, ?, ?, ?, from_unixtime(?), from_unixtime(?), ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
     PrepareStatement(Roleplay_REP_CUSTOMNPCDATA, "REPLACE INTO custom_npcs (`Key`, Entry) VALUES (?, ?)", CONNECTION_ASYNC);
+    PrepareStatement(Roleplay_REP_CUSTOMNPCOWNER, "INSERT INTO custom_npc_owners (`Key`, owner_bnet_account_id, owner_alias, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW()) ON DUPLICATE KEY UPDATE owner_bnet_account_id = VALUES(owner_bnet_account_id), owner_alias = VALUES(owner_alias), updated_at = NOW()", CONNECTION_ASYNC);
     PrepareStatement(Roleplay_REP_SERVER_SETTINGS, "INSERT INTO server_settings (setting_name, setting_value) VALUES (?, ?)", CONNECTION_ASYNC);
 }
 

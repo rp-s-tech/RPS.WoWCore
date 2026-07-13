@@ -1,0 +1,204 @@
+-- Custom NPC — full trinity_string set for .cnpc / .customnpc (11060–11098)
+
+SET NAMES utf8mb4;
+
+DELETE FROM `trinity_string` WHERE `entry` BETWEEN 11060 AND 11098;
+
+INSERT INTO `trinity_string`
+(`entry`, `content_default`, `content_loc1`, `content_loc2`, `content_loc3`, `content_loc4`, `content_loc5`, `content_loc6`, `content_loc7`, `content_loc8`)
+VALUES
+
+(11060,
+'=== Custom NPC (.cnpc / .customnpc) ===\n\nBASICS:\n• Key — technical ID like 1-1, 1-2 (NOT the name above the NPC).\n• Display name — what players see; set with .cnpc set name.\n• Variation — optional number at the end of commands; default is 1 (first look).\n\nQUICK START:\n1) .cnpc add Guard     — empty human male NPC\n   .cnpc clone Guard   — copy YOUR look (armor, face, weapons)\n2) .cnpc list          — find your key (e.g. 1-1)\n3) .cnpc spawn 1-1     — place NPC at your feet\n\nEDIT LOOK:\n• Race:  .cnpc race list  →  .cnpc set race 1-1 2\n• Face:  .cnpc face list 1-1  →  .cnpc face choices 1-1 1  →  .cnpc set face 1-1 1 3\n• Armor: .cnpc equip armor 1-1 all self\n• Weapon: .cnpc equip right 1-1 self\n\nAFTER WEBSITE EDITS:\n.cnpc reload 1-1   (safe read from DB)\n.cnpc refresh 1-1  (apply current state without DB read)\n\nMORE: .cnpc model / .cnpc clone / .cnpc diagnose / .cnpc delete',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'=== Custom NPC (.cnpc / .customnpc) ===\n\nОСНОВЫ:\n• Ключ — технический ID вроде 1-1, 1-2 (это НЕ имя над головой NPC).\n• Отображаемое имя — то, что видят игроки; задаётся через .cnpc set name.\n• Вариация — необязательное число в конце команды; по умолчанию 1 (первый образ).\n\nБЫСТРЫЙ СТАРТ:\n1) .cnpc add Страж      — пустой NPC (человек-мужчина)\n   .cnpc clone Страж    — скопировать ВАШ вид (броня, лицо, оружие)\n2) .cnpc list           — узнать свой ключ (например 1-1)\n3) .cnpc spawn 1-1      — поставить NPC рядом с собой\n\nРЕДАКТИРОВАНИЕ ВНЕШНОСТИ:\n• Раса:  .cnpc race list  →  .cnpc set race 1-1 2\n• Лицо:  .cnpc face list 1-1  →  .cnpc face choices 1-1 1  →  .cnpc set face 1-1 1 3\n• Броня: .cnpc equip armor 1-1 all self\n• Оружие: .cnpc equip right 1-1 self\n\nПОСЛЕ ПРАВОК НА САЙТЕ:\n.cnpc reload 1-1   (безопасно перечитать из БД)\n.cnpc refresh 1-1  (применить текущее состояние без чтения БД)\n\nЕЩЁ: .cnpc model / .cnpc clone / .cnpc diagnose / .cnpc delete'),
+
+(11061,
+'.cnpc add <display name>\nCreates an EMPTY custom NPC (default: human male, no armor/face/weapons copied).\nA key is assigned automatically: <YourBNetAccount>-<number> (e.g. 1-1).\nExample: .cnpc add City Guard\nThen: .cnpc list  →  .cnpc spawn 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc add <отображаемое имя>\nСоздаёт ПУСТОГО custom NPC (по умолчанию: человек-мужчина, без брони/лица/оружия).\nКлюч выдаётся автоматически: <ваш_BNet>-<номер> (например 1-1).\nПример: .cnpc add Городской страж\nДалее: .cnpc list  →  .cnpc spawn 1-1'),
+
+(11062,
+'.cnpc delete <key>\nPermanently deletes the custom NPC: template, all spawns, outfits, equipment and key.\nExample: .cnpc delete 1-1\nCannot be undone.',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc delete <ключ>\nПолностью удаляет custom NPC: шаблон, все спавны, outfit, экипировку и ключ.\nПример: .cnpc delete 1-1\nОтменить нельзя.'),
+
+(11063,
+'.cnpc spawn <key>\nPlaces your custom NPC permanently at your current position.\nExample: .cnpc spawn 1-1\nThe NPC stays in the world after server restart.',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc spawn <ключ>\nСтавит custom NPC навсегда в вашу текущую точку.\nПример: .cnpc spawn 1-1\nNPC останется в мире после рестарта сервера.'),
+
+(11064,
+'.cnpc spawn temp <key>\nTemporarily summons the NPC for ~30 seconds (for preview).\nExample: .cnpc spawn temp 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc spawn temp <ключ>\nВременно призывает NPC на ~30 секунд (для просмотра).\nПример: .cnpc spawn temp 1-1'),
+
+(11065,
+'.cnpc set name <key> <display name>\nChanges the name shown above the NPC head.\nExample: .cnpc set name 1-1 Seventh Legion Guard',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set name <ключ> <отображаемое имя>\nМеняет имя над головой NPC.\nПример: .cnpc set name 1-1 Страж Седьмого легиона'),
+
+(11066,
+'.cnpc set subname <key> <subname>\nChanges the subtitle under the name (title/rank).\nExample: .cnpc set subname 1-1 Alliance Army',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set subname <ключ> <подпись>\nМеняет подпись под именем (звание/титул).\nПример: .cnpc set subname 1-1 Армия Альянса'),
+
+(11067,
+'=== Face / appearance editing ===\n\nSTEP BY STEP:\n1) .cnpc face list <key>           — list options (Skin, Hair, Eyes…) with numbers 1, 2, 3…\n2) .cnpc face choices <key> <N>   — list variants for option N\n3) .cnpc set face <key> <option#> <choice#>\n\nOther:\n• .cnpc set face self <key>  — copy YOUR character face\n• .cnpc set face option <key> <option#> <choice#>  — same as above\n• .cnpc set face copyoption <key> <option#>  — copy one option from yourself\n• rawoption — for advanced users only (raw DB2 IDs)\n\nExample: .cnpc set face 1-1 2 5  (option 2, choice 5)',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'=== Редактирование лица / внешности ===\n\nПОШАГОВО:\n1) .cnpc face list <ключ>           — список опций (Кожа, Волосы, Глаза…) с номерами 1, 2, 3…\n2) .cnpc face choices <ключ> <N>   — варианты для опции N\n3) .cnpc set face <ключ> <опция#> <вариант#>\n\nДополнительно:\n• .cnpc set face self <ключ>  — скопировать лицо с вашего персонажа\n• .cnpc set face option <ключ> <опция#> <вариант#>  — то же самое\n• .cnpc set face copyoption <ключ> <опция#>  — скопировать одну опцию с себя\n• rawoption — только для опытных (сырые ID из БД)\n\nПример: .cnpc set face 1-1 2 5  (опция 2, вариант 5)'),
+
+(11068,
+'.cnpc set race <key> <raceId> [variation]\nChanges NPC race. Invalid face settings are reset automatically.\nFirst run: .cnpc race list  — see raceId numbers.\nExample: .cnpc set race 1-1 1   (Human)\n         .cnpc set race 1-1 2   (Orc)',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set race <ключ> <raceId> [вариация]\nМеняет расу NPC. Неподходящие настройки лица сбрасываются автоматически.\nСначала: .cnpc race list  — посмотреть номера рас (raceId).\nПример: .cnpc set race 1-1 1   (Человек)\n         .cnpc set race 1-1 2   (Орк)'),
+
+(11069,
+'.cnpc set gender <key> <0|1> [variation]\n0 = male, 1 = female.\nExample: .cnpc set gender 1-1 1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set gender <ключ> <0|1> [вариация]\n0 = мужчина, 1 = женщина.\nПример: .cnpc set gender 1-1 1'),
+
+(11070,
+'.cnpc set displayid <key> <displayId> [variation]\nAdvanced: sets a raw creature model ID.\nWarning: non-outfit models break humanoid customization for this variation.',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set displayid <ключ> <displayId> [вариация]\nДля опытных: ставит сырой ID модели существа.\nВнимание: обычные модели ломают кастомизацию humanoid для этой вариации.'),
+
+(11071,
+'.cnpc set scale <key> <scale> [variation]\nChanges NPC size. 1.0 = normal.\nExample: .cnpc set scale 1-1 1.2',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set scale <ключ> <размер> [вариация]\nМеняет размер NPC. 1.0 = обычный.\nПример: .cnpc set scale 1-1 1.2'),
+
+(11072,
+'.cnpc set guild <key> [variation]\nCopies your current guild tabard/emblem to the NPC outfit.',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set guild <ключ> [вариация]\nКопирует вашу гильдию/табард на outfit NPC.'),
+
+(11073,
+'.cnpc set tameable <key> <0|1>\n0 = not tameable, 1 = hunter can tame.\nExample: .cnpc set tameable 1-1 1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set tameable <ключ> <0|1>\n0 = нельзя приручить, 1 = охотник может приручить.\nПример: .cnpc set tameable 1-1 1'),
+
+(11085,
+'.cnpc set standstate <key> <pose>\nPose: stand, sit, sleep, kneel, dead, submerged (or number 0–9).\nExample: .cnpc set standstate 1-1 sit',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc set standstate <ключ> <поза>\nПоза: stand, sit, sleep, kneel, dead, submerged (или число 0–9).\nПример: .cnpc set standstate 1-1 sit'),
+
+(11074,
+'.cnpc equip armor <key> <slot|all> <item|self> [variation]\nSets visible armor (transmog look, not real items).\nSlots: head, shoulders, body, chest, waist, legs, feet, wrists, hands, tabard, back\n• all self — copy all your visible armor\n• chest self — copy one slot from yourself\n• head 12345 — force item look by ID\nExample: .cnpc equip armor 1-1 all self',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc equip armor <ключ> <слот|all> <предмет|self> [вариация]\nСтавит видимую броню (трансмог, не реальные предметы).\nСлоты: head, shoulders, body, chest, waist, legs, feet, wrists, hands, tabard, back\n• all self — скопировать всю вашу видимую броню\n• chest self — один слот с себя\n• head 12345 — предмет по ID\nПример: .cnpc equip armor 1-1 all self'),
+
+(11075,
+'.cnpc equip right|left|ranged <key> <item|self> [variation]\nSets visible weapon. Use self to copy from your character.\nExample: .cnpc equip right 1-1 self',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc equip right|left|ranged <ключ> <предмет|self> [вариация]\nСтавит видимое оружие. self — скопировать с вашего персонажа.\nПример: .cnpc equip right 1-1 self'),
+
+(11076,
+'.cnpc unequip armor <key> <slot> [variation]\nRemoves visible armor from one slot.\nExample: .cnpc unequip armor 1-1 head',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc unequip armor <ключ> <слот> [вариация]\nСнимает видимую броню с одного слота.\nПример: .cnpc unequip armor 1-1 head'),
+
+(11077,
+'.cnpc unequip right|left|ranged <key> [variation]\nRemoves weapon from hand.\nExample: .cnpc unequip right 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc unequip right|left|ranged <ключ> [вариация]\nУбирает оружие из руки.\nПример: .cnpc unequip right 1-1'),
+
+(11096,
+'.cnpc equip copy custom <key> <sourceKey> <variation> [sourceVariation]\nCopies weapons from another custom NPC.\nExample: .cnpc equip copy custom 1-2 1-1 1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc equip copy custom <ключ> <исходный_ключ> <вариация> [исходная_вариация]\nКопирует оружие с другого custom NPC.\nПример: .cnpc equip copy custom 1-2 1-1 1'),
+
+(11078,
+'.cnpc remove variation <key> <variation>\nDeletes an extra look (variation 2, 3…). Variation 1 cannot be removed.\nTo delete the whole NPC use .cnpc delete <key>.',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc remove variation <ключ> <вариация>\nУдаляет дополнительный образ (вариация 2, 3…). Вариацию 1 удалить нельзя.\nЧтобы удалить весь NPC: .cnpc delete <ключ>.'),
+
+(11079,
+'=== Clone commands ===\n.cnpc clone <display name>        — copy YOUR look (armor, face, weapons)\n.cnpc clone player <name> <display name>  — copy another online player\n.cnpc clone custom <sourceKey> <name>  — full copy of existing custom NPC\n.cnpc clone entry <entry> <name>  — copy world creature by entry ID\n.cnpc clone target <name>  — copy selected NPC (.npc select)\n\nKey is auto-generated (e.g. 1-2). For empty NPC use .cnpc add',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'=== Команды клонирования ===\n.cnpc clone <имя>        — скопировать ВАШ вид (броня, лицо, оружие)\n.cnpc clone player <ник> <имя>  — скопировать другого игрока онлайн\n.cnpc clone custom <исходный_ключ> <имя>  — полная копия custom NPC\n.cnpc clone entry <entry> <имя>  — копия существа из мира по entry\n.cnpc clone target <имя>  — копия выбранного NPC (.npc select)\n\nКлюч выдаётся автоматически (например 1-2). Для пустого NPC: .cnpc add'),
+
+(11080,
+'.cnpc clone target <display name>\nCreates custom NPC from the creature you selected with .npc select.\nExample: .npc select  →  .cnpc clone target Captured Guard',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc clone target <отображаемое имя>\nСоздаёт custom NPC из выбранного существа (.npc select).\nПример: .npc select  →  .cnpc clone target Пленный страж'),
+
+(11081,
+'.cnpc apply <key> [variation]\nApplies your custom NPC template to another creature.\nFirst select target: .npc select  →  then .cnpc apply 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc apply <ключ> [вариация]\nПрименяет шаблон custom NPC к другому существу.\nСначала выберите цель: .npc select  →  затем .cnpc apply 1-1'),
+
+(11082,
+'.cnpc reload <key|all>\nRe-reads NPC data from database (e.g. after editing on website).\nSafe: broken data will NOT break the server.\nExample: .cnpc reload 1-1  or  .cnpc reload all',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc reload <ключ|all>\nПеречитывает данные NPC из базы (например после правок на сайте).\nБезопасно: битые данные НЕ сломают сервер.\nПример: .cnpc reload 1-1  или  .cnpc reload all'),
+
+(11083,
+'.cnpc import <entry> <key>\nLinks an existing creature_template entry to a custom NPC key.\nFor advanced/admin use.\nExample: .cnpc import 400001 my-npc-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc import <entry> <ключ>\nПривязывает существующий creature_template к ключу custom NPC.\nДля админов/опытных.\nПример: .cnpc import 400001 my-npc-1'),
+
+(11084,
+'.cnpc list\nShows all your custom NPCs: keys, entry IDs, variation counts.\nUse the key column for other commands (spawn, set, equip…).',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc list\nПоказывает ваши custom NPC: ключи, entry, число вариаций.\nКолонку «ключ» используйте в остальных командах (spawn, set, equip…).'),
+
+(11094,
+'.cnpc refresh <key|all>\nUpdates all live copies of the NPC in the world without reading DB.\nUse after in-game edits when reload is not needed.\nExample: .cnpc refresh 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc refresh <ключ|all>\nОбновляет все живые копии NPC в мире без чтения БД.\nИспользуйте после правок в игре, когда reload не нужен.\nПример: .cnpc refresh 1-1'),
+
+(11095,
+'.cnpc diagnose <key>\nShows technical info: template, outfits, equipment, spawns, DB status.\nUse when something looks wrong.\nExample: .cnpc diagnose 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc diagnose <ключ>\nПоказывает тех. информацию: шаблон, outfit, экипировка, спавны, статус БД.\nЕсли что-то пошло не так.\nПример: .cnpc diagnose 1-1'),
+
+(11086,
+'.cnpc face list <key> [variation]\nShows appearance options with numbers 1, 2, 3…\nEach line: option name, how many choices, current selection.\nAlways run this BEFORE .cnpc set face.\nExample: .cnpc face list 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc face list <ключ> [вариация]\nПоказывает опции внешности с номерами 1, 2, 3…\nВ каждой строке: название опции, сколько вариантов, текущий выбор.\nВсегда запускайте ПЕРЕД .cnpc set face.\nПример: .cnpc face list 1-1'),
+
+(11087,
+'.cnpc face choices <key> <option#> [variation]\nShows numbered choices for one option from face list.\nThen set with: .cnpc set face <key> <option#> <choice#>\nExample: .cnpc face choices 1-1 2  →  .cnpc set face 1-1 2 4',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc face choices <ключ> <номер_опции> [вариация]\nПоказывает пронумерованные варианты для одной опции из face list.\nЗатем: .cnpc set face <ключ> <опция#> <вариант#>\nПример: .cnpc face choices 1-1 2  →  .cnpc set face 1-1 2 4'),
+
+(11088,
+'.cnpc model list <key>\nShows all look variations (outfits) for one NPC.\nVariation 1 is default; you can add more with model add.\nExample: .cnpc model list 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc model list <ключ>\nПоказывает все вариации внешности (outfit) у одного NPC.\nВариация 1 — основная; новые добавляются через model add.\nПример: .cnpc model list 1-1'),
+
+(11089,
+'.cnpc model add <source> <key> …\nAdds a new look variation to existing NPC.\nSources:\n• blank — empty humanoid\n• self — your appearance\n• player <name> — another player\n• target — selected NPC\n• custom <sourceKey> — copy from another custom NPC\nExample: .cnpc model add self 1-1',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc model add <источник> <ключ> …\nДобавляет новую вариацию внешности к существующему NPC.\nИсточники:\n• blank — пустой humanoid\n• self — ваш вид\n• player <ник> — другой игрок\n• target — выбранный NPC\n• custom <исходный_ключ> — копия с другого custom NPC\nПример: .cnpc model add self 1-1'),
+
+(11090,
+'.cnpc model copy <key> <fromVariation> [toVariation]\nDuplicates one variation to another slot.\nExample: .cnpc model copy 1-1 1 2',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc model copy <ключ> <из_вариации> [в_вариацию]\nКопирует одну вариацию в другой слот.\nПример: .cnpc model copy 1-1 1 2'),
+
+(11091,
+'.cnpc model apply <key> <variation>\nApplies one variation to selected creature (.npc select) without changing the template default.',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc model apply <ключ> <вариация>\nПрименяет вариацию к выбранному существу (.npc select) без смены default шаблона.'),
+
+(11092,
+'.cnpc clone custom <sourceKey> <display name> [sourceVariation]\nCreates a FULL copy of custom NPC (all looks, equipment, settings) with a new auto key.\nExample: .cnpc clone custom 1-1 Copy of Guard',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc clone custom <исходный_ключ> <имя> [вариация]\nПолная копия custom NPC (все образы, экипировка, настройки) с новым автоключом.\nПример: .cnpc clone custom 1-1 Копия стража'),
+
+(11093,
+'.cnpc clone entry <entry> <display name> [variation]\nCreates custom NPC from any creature entry in the world database.\nExample: .cnpc clone entry 12345 Stormwind Guard',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc clone entry <entry> <имя> [вариация]\nСоздаёт custom NPC из любого entry существа в базе мира.\nПример: .cnpc clone entry 12345 Страж Штормграда'),
+
+(11097,
+'.cnpc race list\nShows all races you can set with .cnpc set race.\nEach line: number, race name, raceId to use in commands.\nUnavailable races are marked.\nExample: .cnpc set race 1-1 1  (Human, raceId=1)',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc race list\nПоказывает все расы для .cnpc set race.\nВ каждой строке: номер, название, raceId для команд.\nНедоступные расы помечены.\nПример: .cnpc set race 1-1 1  (Человек, raceId=1)'),
+
+(11098,
+'.cnpc race options <raceId> <gender>\nPreview appearance options for a race BEFORE creating/editing NPC.\nGender: 0 = male, 1 = female.\nExample: .cnpc race options 1 0  (human male options)',
+NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+'.cnpc race options <raceId> <пол>\nПросмотр опций внешности для расы ДО создания/редактирования NPC.\nПол: 0 = мужчина, 1 = женщина.\nПример: .cnpc race options 1 0  (опции человека-мужчины)');
