@@ -2273,6 +2273,7 @@ class TC_GAME_API Player final : public Unit, public GridObject<Player>
         void UpdateMaxHealth() override;
         void UpdateMaxPower(Powers power) override;
         uint32 GetPowerIndex(Powers power) const override;
+        ClassPowerTypes GetPowerTypes() const override;
         void UpdateAttackPowerAndDamage(bool ranged = false) override;
         void ApplySpellPowerBonus(int32 amount, bool apply);
         void UpdateSpellDamageAndHealingBonus();
@@ -2491,6 +2492,7 @@ class TC_GAME_API Player final : public Unit, public GridObject<Player>
         static uint8 GetFactionGroupForRace(uint8 race);
         void SetChromieTime(int32 expansionId);
         void SetChromieTimeConditionalFlags(bool enabled);
+        void SetTimerunningSeasonID(uint32 seasonId);
         void SendCtrOptions(WorldPackets::Misc::CTROptionsBlock const* previous = nullptr) const;
         Team GetTeam() const { return m_team; }
         Team GetNativeTeam() const { return TeamForRace(GetRace()); }
@@ -3176,6 +3178,7 @@ class TC_GAME_API Player final : public Unit, public GridObject<Player>
         GuidList WhisperList;
         TimePoint m_regenInterruptTimestamp;
         uint32 m_regenTimerCount;
+        float m_healthFraction;
         std::array<float, MAX_POWERS_PER_CLASS> m_powerFraction;
         uint32 m_contestedPvPTimer;
 

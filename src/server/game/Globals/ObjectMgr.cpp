@@ -2177,7 +2177,7 @@ void ObjectMgr::LoadCreatures()
         data.spawntimesecs  = fields[9].GetUInt32();
         data.wander_distance = fields[10].GetFloat();
         data.currentwaypoint = fields[11].GetUInt32();
-        data.curHealthPct   = fields[12].GetUInt32();
+        data.curHealthPct   = fields[12].GetUInt32OrNull();
         data.movementType   = fields[13].GetUInt8();
         data.spawnDifficulties = ParseSpawnDifficulties(fields[14].GetStringView(), "creature", guid, data.mapId, spawnMasks[data.mapId]);
         int16 gameEvent     = fields[15].GetInt8();
@@ -2375,11 +2375,20 @@ void ObjectMgr::LoadCreatures()
             }
         }
 
-        uint32 healthPct = std::clamp<uint32>(data.curHealthPct, 1, 100);
-        if (data.curHealthPct != healthPct)
+        if (data.curHealthPct)
         {
-            TC_LOG_ERROR("sql.sql", "Table `creature` has creature (GUID: {} Entry: {}) with invalid `curHealthPct` {}, set to {}.", guid, data.id, data.curHealthPct, healthPct);
-            data.curHealthPct = healthPct;
+            uint32 healthPct = std::clamp<uint32>(*data.curHealthPct, 1, 100);
+            if (*data.curHealthPct != healthPct)
+            {
+                TC_LOG_ERROR("sql.sql", "Table `creature` has creature (GUID: {} Entry: {}) with invalid `curHealthPct` {}, set to {}.", guid, data.id, *data.curHealthPct, healthPct);
+                data.curHealthPct = healthPct;
+            }
+
+            if (cInfo->RegenHealth)
+            {
+                TC_LOG_ERROR("sql.sql", "Table `creature` has creature (GUID: {} Entry: {}) with `curHealthPct` {}, but health regeneration is not disabled in `creature_template`, set to 100.", guid, data.id, *data.curHealthPct);
+                data.curHealthPct.reset();
+            }
         }
 
         if (sWorld->getBoolConfig(CONFIG_CALCULATE_CREATURE_ZONE_AREA_DATA))
@@ -2414,15 +2423,15 @@ void ObjectMgr::LoadCreatures()
     TC_LOG_INFO("server.loading", ">> Loaded {} creatures in {} ms", _creatureDataStore.size(), GetMSTimeDiffToNow(oldMSTime));
 }
 
-CellObjectGuids const* ObjectMgr::GetCellObjectGuids(uint32 mapid, Difficulty spawnMode, uint32 cell_id)
+GridObjectGuids const* ObjectMgr::GetGridObjectGuids(uint32 mapid, Difficulty spawnMode, uint32 gridId)
 {
-    if (CellObjectGuidsMap const* mapGuids = Trinity::Containers::MapGetValuePtr(_mapObjectGuidsStore, { mapid, spawnMode }))
-        return Trinity::Containers::MapGetValuePtr(*mapGuids, cell_id);
+    if (GridObjectGuidsMap const* mapGuids = Trinity::Containers::MapGetValuePtr(_mapObjectGuidsStore, { mapid, spawnMode }))
+        return Trinity::Containers::MapGetValuePtr(*mapGuids, gridId);
 
     return nullptr;
 }
 
-CellObjectGuidsMap const* ObjectMgr::GetMapObjectGuids(uint32 mapid, Difficulty spawnMode)
+GridObjectGuidsMap const* ObjectMgr::GetMapObjectGuids(uint32 mapid, Difficulty spawnMode)
 {
     return Trinity::Containers::MapGetValuePtr(_mapObjectGuidsStore, { mapid, spawnMode });
 }
@@ -2432,56 +2441,54 @@ bool ObjectMgr::HasPersonalSpawns(uint32 mapid, Difficulty spawnMode, uint32 pha
     return Trinity::Containers::MapGetValuePtr(_mapPersonalObjectGuidsStore, { mapid, spawnMode, phaseId }) != nullptr;
 }
 
-CellObjectGuids const* ObjectMgr::GetCellPersonalObjectGuids(uint32 mapid, Difficulty spawnMode, uint32 phaseId, uint32 cell_id) const
+GridObjectGuids const* ObjectMgr::GetCellPersonalObjectGuids(uint32 mapid, Difficulty spawnMode, uint32 phaseId, uint32 gridId) const
 {
-    if (CellObjectGuidsMap const* guids = Trinity::Containers::MapGetValuePtr(_mapPersonalObjectGuidsStore, { mapid, spawnMode, phaseId }))
-        return Trinity::Containers::MapGetValuePtr(*guids, cell_id);
+    if (GridObjectGuidsMap const* guids = Trinity::Containers::MapGetValuePtr(_mapPersonalObjectGuidsStore, { mapid, spawnMode, phaseId }))
+        return Trinity::Containers::MapGetValuePtr(*guids, gridId);
 
     return nullptr;
 }
 
-template<CellGuidSet CellObjectGuids::*guids>
+template<GridGuidSet GridObjectGuids::*guids>
 void ObjectMgr::AddSpawnDataToGrid(SpawnData const* data)
 {
-    uint32 cellId = Trinity::ComputeCellCoord(data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY()).GetId();
-    bool isPersonalPhase = PhasingHandler::IsPersonalPhase(data->phaseId);
-    if (!isPersonalPhase)
+    uint32 gridId = Trinity::ComputeGridCoord(data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY()).GetId();
+    if (!PhasingHandler::IsPersonalPhase(data->phaseId))
     {
         for (Difficulty difficulty : data->spawnDifficulties)
-            (_mapObjectGuidsStore[{ data->mapId, difficulty }][cellId].*guids).insert(data->spawnId);
+            (_mapObjectGuidsStore[{ data->mapId, difficulty }][gridId].*guids).insert(data->spawnId);
     }
     else
     {
         for (Difficulty difficulty : data->spawnDifficulties)
-            (_mapPersonalObjectGuidsStore[{ data->mapId, difficulty, data->phaseId }][cellId].*guids).insert(data->spawnId);
+            (_mapPersonalObjectGuidsStore[{ data->mapId, difficulty, data->phaseId }][gridId].*guids).insert(data->spawnId);
     }
 }
 
-template<CellGuidSet CellObjectGuids::*guids>
+template<GridGuidSet GridObjectGuids::*guids>
 void ObjectMgr::RemoveSpawnDataFromGrid(SpawnData const* data)
 {
-    uint32 cellId = Trinity::ComputeCellCoord(data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY()).GetId();
-    bool isPersonalPhase = PhasingHandler::IsPersonalPhase(data->phaseId);
-    if (!isPersonalPhase)
+    uint32 gridId = Trinity::ComputeGridCoord(data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY()).GetId();
+    if (!PhasingHandler::IsPersonalPhase(data->phaseId))
     {
         for (Difficulty difficulty : data->spawnDifficulties)
-            (_mapObjectGuidsStore[{ data->mapId, difficulty }][cellId].*guids).erase(data->spawnId);
+            (_mapObjectGuidsStore[{ data->mapId, difficulty }][gridId].*guids).erase(data->spawnId);
     }
     else
     {
         for (Difficulty difficulty : data->spawnDifficulties)
-            (_mapPersonalObjectGuidsStore[{ data->mapId, difficulty, data->phaseId }][cellId].*guids).erase(data->spawnId);
+            (_mapPersonalObjectGuidsStore[{ data->mapId, difficulty, data->phaseId }][gridId].*guids).erase(data->spawnId);
     }
 }
 
 void ObjectMgr::AddCreatureToGrid(CreatureData const* data)
 {
-    AddSpawnDataToGrid<&CellObjectGuids::creatures>(data);
+    AddSpawnDataToGrid<&GridObjectGuids::creatures>(data);
 }
 
 void ObjectMgr::RemoveCreatureFromGrid(CreatureData const* data)
 {
-    RemoveSpawnDataFromGrid<&CellObjectGuids::creatures>(data);
+    RemoveSpawnDataFromGrid<&GridObjectGuids::creatures>(data);
 }
 
 void ObjectMgr::LoadGameObjects()
@@ -2984,12 +2991,12 @@ void ObjectMgr::OnDeleteSpawnData(SpawnData const* data)
 
 void ObjectMgr::AddGameobjectToGrid(GameObjectData const* data)
 {
-    AddSpawnDataToGrid<&CellObjectGuids::gameobjects>(data);
+    AddSpawnDataToGrid<&GridObjectGuids::gameobjects>(data);
 }
 
 void ObjectMgr::RemoveGameobjectFromGrid(GameObjectData const* data)
 {
-    RemoveSpawnDataFromGrid<&CellObjectGuids::gameobjects>(data);
+    RemoveSpawnDataFromGrid<&GridObjectGuids::gameobjects>(data);
 }
 
 uint32 FillMaxDurability(uint32 itemClass, uint32 itemSubClass, uint32 inventoryType, uint32 quality, uint32 itemLevel)

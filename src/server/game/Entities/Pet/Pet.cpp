@@ -846,6 +846,14 @@ bool Pet::CreateBaseAtTamed(CreatureTemplate const* cinfo, Map* map)
     return true;
 }
 
+void Pet::SendNewlyTamed(bool playPingFx /*= true*/) const
+{
+    WorldPackets::Pet::PetNewlyTamed petNewlyTamed;
+    petNewlyTamed.UnitGUID = GetGUID();
+    petNewlyTamed.PlayPingFX = playPingFx;
+    SendMessageToSet(petNewlyTamed.Write(), true);
+}
+
 /// @todo Move stat mods code to pet passive auras
 bool Guardian::InitStatsForLevel(uint8 petlevel)
 {
@@ -916,7 +924,8 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
     {
         // remove elite bonuses included in DB values
         CreatureBaseStats const* stats = sObjectMgr->GetCreatureBaseStats(petlevel, cinfo->unit_class);
-        ApplyLevelScaling();
+        if (!m_Properties) // pet loaded from DB
+            ApplyLevelScaling(GetOwner()->m_unitData->ContentTuningID, GetOwner()->m_unitData->ScalingLevelDelta);
 
         CreatureDifficulty const* creatureDifficulty = GetCreatureDifficulty();
         SetCreateHealth(std::max(sDB2Manager.EvaluateExpectedStat(ExpectedStatType::CreatureHealth, petlevel, creatureDifficulty->GetHealthScalingExpansion(), m_unitData->ContentTuningID, Classes(cinfo->unit_class), 0) * creatureDifficulty->HealthModifier * GetHealthMod(cinfo->Classification), 1.0f));
@@ -1090,8 +1099,8 @@ bool Guardian::InitStatsForLevel(uint8 petlevel)
                     SetBaseWeaponDamage(RANGED_ATTACK, MAXDAMAGE, basedamage);
 
                     CreatureBaseStats const* baseStats = sObjectMgr->GetCreatureBaseStats(petlevel, cinfo->unit_class);
-                    SetStatFlatModifier(UNIT_MOD_ATTACK_POWER, BASE_VALUE, float(baseStats->AttackPower));
-                    SetStatFlatModifier(UNIT_MOD_ATTACK_POWER_RANGED, BASE_VALUE, float(baseStats->RangedAttackPower));
+                    m_baseAttackPower       = baseStats->AttackPower;
+                    m_baseRangedAttackPower = baseStats->RangedAttackPower;
                     break;
                 }
             }
