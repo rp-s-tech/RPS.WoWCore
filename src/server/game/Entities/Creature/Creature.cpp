@@ -585,25 +585,34 @@ bool Creature::InitEntry(uint32 entry, CreatureData const* data /*= nullptr*/)
         return false;
     }
 
-    CreatureModel model = *ObjectMgr::ChooseDisplayId(creatureInfo, data);
-    CreatureModelInfo const* minfo = sObjectMgr->GetCreatureModelRandomGender(&model, creatureInfo);
-    if (!minfo)                                             // Cancel load if no model defined
-    {
-        TC_LOG_ERROR("sql.sql", "Creature (Entry: {}) has invalid model {} defined in table `creature_template_model`, can't load.", entry, model.CreatureDisplayID);
+    // Roleplay hook: keep custom NPC spawn logic in RolePlay to reduce upstream merge conflicts.
+    CustomNpcEntryInitResult const customNpcInit = sRoleplay->TryInitCustomNpcEntry(this, entry, creatureInfo, data);
+    if (customNpcInit.status == CustomNpcEntryInitResult::Status::Failed)
         return false;
-    }
-
-    SetDisplayId(model.CreatureDisplayID, true);
-
-    // Load creature equipment
-    if (!data)
-        LoadEquipment();  // use default equipment (if available) for summons
-    else if (data->equipmentId == 0)
-        LoadEquipment(0); // 0 means no equipment for creature table
+    if (customNpcInit.status == CustomNpcEntryInitResult::Status::Success)
+        m_originalEquipmentId = customNpcInit.variation;
     else
     {
-        m_originalEquipmentId = data->equipmentId;
-        LoadEquipment(data->equipmentId);
+        CreatureModel model = *ObjectMgr::ChooseDisplayId(creatureInfo, data);
+        CreatureModelInfo const* minfo = sObjectMgr->GetCreatureModelRandomGender(&model, creatureInfo);
+        if (!minfo)                                             // Cancel load if no model defined
+        {
+            TC_LOG_ERROR("sql.sql", "Creature (Entry: {}) has invalid model {} defined in table `creature_template_model`, can't load.", entry, model.CreatureDisplayID);
+            return false;
+        }
+
+        SetDisplayId(model.CreatureDisplayID, true);
+
+        // Load creature equipment
+        if (!data)
+            LoadEquipment();  // use default equipment (if available) for summons
+        else if (data->equipmentId == 0)
+            LoadEquipment(0); // 0 means no equipment for creature table
+        else
+        {
+            m_originalEquipmentId = data->equipmentId;
+            LoadEquipment(data->equipmentId);
+        }
     }
 
     SetName(creatureInfo->Name);                              // at normal entry always

@@ -46,6 +46,19 @@ struct CustomNpcReloadSummary
     uint32 failedCount = 0;
 };
 
+struct CustomNpcEntryInitResult
+{
+    enum class Status : uint8
+    {
+        NotApplicable,
+        Failed,
+        Success
+    };
+
+    Status status = Status::NotApplicable;
+    uint8 variation = 0;
+};
+
 struct CustomNpcRaceDescriptor
 {
     uint32 listIndex = 0;
@@ -166,6 +179,10 @@ public:
     bool ReloadCustomNpcFromDb(std::string const& key);
     CustomNpcReloadSummary ReloadAllCustomNpcsFromDb();
     std::string const* GetCustomNpcKeyForEntry(uint32 templateId) const;
+    bool IsCustomNpcEntry(uint32 templateId) const { return GetCustomNpcKeyForEntry(templateId) != nullptr; }
+    Optional<uint8> ResolveCustomNpcSpawnVariation(CreatureTemplate const* creatureTemplate, CreatureData const* data) const;
+    CustomNpcEntryInitResult TryInitCustomNpcEntry(Creature* creature, uint32 entry, CreatureTemplate const* creatureInfo, CreatureData const* data);
+    void ApplyCustomNpcSpawnAppearance(Creature* creature, uint32 templateId, uint8 variation);
     std::vector<Creature*> GetLiveCustomNpcCreatures(std::string const& key) const;
     void RebuildCustomNpcSpawnsFromObjectMgr(std::string const& key);
     bool RefreshCustomNpcCreatures(std::string const& key, Optional<uint8> variationId = {});
@@ -236,6 +253,8 @@ private:
     void SaveNpcOutfitToDb(uint32 templateId, uint8 variationId);
     void SaveCustomNpcDataToDb(CustomNpcData outfitData);
     void SaveNpcCreatureTemplateToDb(CreatureTemplate& cTemplate);
+    void RefreshCreatureTemplateClientCache(CreatureTemplate& cTemplate);
+    void ReloadCreatureLocaleFromDb(uint32 entry);
     void SaveNpcEquipmentInfoToDb(uint32 templateId, uint8 variationId);
     void SaveNpcCreatureTemplateAddonToDb(uint32 templateId, CreatureAddon cAddon);
     void SaveCustomNpcOwnerToDb(CustomNpcData const& npcData);

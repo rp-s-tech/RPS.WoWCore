@@ -6,6 +6,7 @@
 #include "Map.h"
 #include "MapManager.h"
 #include "ObjectMgr.h"
+#include "Random.h"
 #include "RaceMask.h"
 #include "SmartEnum.h"
 #include "TransmogMgr.h"
@@ -384,6 +385,72 @@ std::string const* Roleplay::GetCustomNpcKeyForEntry(uint32 templateId) const
     return nullptr;
 }
 
+Optional<uint8> Roleplay::ResolveCustomNpcSpawnVariation(CreatureTemplate const* creatureTemplate, CreatureData const* data) const
+{
+    if (!creatureTemplate || !IsCustomNpcEntry(creatureTemplate->Entry))
+        return {};
+
+    uint32 const modelCount = creatureTemplate->Models.size();
+    if (!modelCount)
+        return {};
+
+    if (data)
+    {
+        if (data->equipmentId > 0 && uint32(data->equipmentId) <= modelCount)
+            return uint8(data->equipmentId);
+
+        if (data->display)
+        {
+            for (uint32 i = 0; i < modelCount; ++i)
+            {
+                if (creatureTemplate->Models[i].CreatureDisplayID == data->display->CreatureDisplayID)
+                    return uint8(i + 1);
+            }
+        }
+    }
+
+    if (modelCount > 1)
+        return uint8(urand(1, modelCount));
+
+    return 1;
+}
+
+void Roleplay::ApplyCustomNpcSpawnAppearance(Creature* creature, uint32 templateId, uint8 variation)
+{
+    ApplyCustomNpcStateToCreature(creature, templateId, variation);
+}
+
+CustomNpcEntryInitResult Roleplay::TryInitCustomNpcEntry(Creature* creature, uint32 entry, CreatureTemplate const* creatureInfo, CreatureData const* data)
+{
+    CustomNpcEntryInitResult result;
+
+    Optional<uint8> customNpcVariation = ResolveCustomNpcSpawnVariation(creatureInfo, data);
+    if (!customNpcVariation)
+        return result;
+
+    CreatureModel const* chosenModel = creatureInfo->GetModelByIdx(*customNpcVariation - 1);
+    if (!chosenModel)
+    {
+        TC_LOG_ERROR("sql.sql", "Creature (Entry: {}) custom NPC variation {} is invalid.", entry, uint32(*customNpcVariation));
+        result.status = CustomNpcEntryInitResult::Status::Failed;
+        return result;
+    }
+
+    CreatureModel model = *chosenModel;
+    CreatureModelInfo const* minfo = sObjectMgr->GetCreatureModelRandomGender(&model, creatureInfo);
+    if (!minfo && !CreatureOutfit::IsFake(model.CreatureDisplayID))
+    {
+        TC_LOG_ERROR("sql.sql", "Creature (Entry: {}) has invalid model {} defined in table `creature_template_model`, can't load.", entry, model.CreatureDisplayID);
+        result.status = CustomNpcEntryInitResult::Status::Failed;
+        return result;
+    }
+
+    ApplyCustomNpcSpawnAppearance(creature, entry, *customNpcVariation);
+    result.status = CustomNpcEntryInitResult::Status::Success;
+    result.variation = *customNpcVariation;
+    return result;
+}
+
 std::vector<Creature*> Roleplay::GetLiveCustomNpcCreatures(std::string const& key) const
 {
     std::vector<Creature*> result;
@@ -487,10 +554,6 @@ void Roleplay::ReloadSpawnedCustomNpcs(std::string const& key, Optional<uint8> v
         return;
     }
 
-    uint8 variation = variationId.value_or(1);
-    if (variation < 1 || variation > cTemplate.Models.size())
-        variation = 1;
-
     std::vector<Creature*> creatures = GetLiveCustomNpcCreatures(key);
     TC_LOG_DEBUG("roleplay", "ROLEPLAY: Found {} live creature(s) for custom NPC '{}' (entry {}).", creatures.size(), key, data.templateId);
 
@@ -498,6 +561,15 @@ void Roleplay::ReloadSpawnedCustomNpcs(std::string const& key, Optional<uint8> v
     {
         if (!creature)
             continue;
+
+        uint8 variation = 1;
+        if (variationId)
+            variation = *variationId;
+        else if (Optional<uint8> resolvedVariation = ResolveCustomNpcSpawnVariation(&cTemplate, creature->GetCreatureData()))
+            variation = *resolvedVariation;
+
+        if (variation < 1 || variation > cTemplate.Models.size())
+            variation = 1;
 
         ApplyCustomNpcStateToCreature(creature, data.templateId, variation);
         TC_LOG_DEBUG("roleplay", "ROLEPLAY: Reloaded creature spawn {} for custom NPC '{}'.", creature->GetSpawnId(), key);
@@ -626,8 +698,22 @@ bool Roleplay::TryLoadCustomNpcBundleFromDb(uint32 templateId, CustomNpcReloadBu
 
 bool Roleplay::CommitCustomNpcBundle(uint32 templateId, CustomNpcReloadBundle&& bundle)
 {
-    sObjectMgr->_creatureTemplateStore[templateId] = std::move(bundle.creatureTemplate);
-    sObjectMgr->_creatureTemplateStore[templateId].Models = std::move(bundle.models);
+    CreatureTemplate& existing = sObjectMgr->_creatureTemplateStore[templateId];
+
+    std::vector<uint32> gossipMenuIds = std::move(existing.GossipMenuIds);
+    std::unordered_map<Difficulty, CreatureDifficulty> difficultyStore = std::move(existing.difficultyStore);
+    uint32 resistance[MAX_SPELL_SCHOOL];
+    memcpy(resistance, existing.resistance, sizeof(resistance));
+    uint32 spells[MAX_CREATURE_SPELLS];
+    memcpy(spells, existing.spells, sizeof(spells));
+
+    existing = std::move(bundle.creatureTemplate);
+    existing.Models = std::move(bundle.models);
+    existing.GossipMenuIds = std::move(gossipMenuIds);
+    existing.difficultyStore = std::move(difficultyStore);
+    memcpy(existing.resistance, resistance, sizeof(existing.resistance));
+    memcpy(existing.spells, spells, sizeof(existing.spells));
+    existing.QueryData.reset();
 
     for (auto& pair : bundle.outfits)
         sObjectMgr->_creatureOutfitStore[pair.first] = std::move(pair.second);
@@ -666,6 +752,9 @@ bool Roleplay::ReloadCustomNpcFromDb(std::string const& key)
         TC_LOG_ERROR("roleplay", "ROLEPLAY: Reload failed for custom NPC '{}' (entry={}): commit failed.", key, templateId);
         return false;
     }
+
+    ReloadCreatureLocaleFromDb(templateId);
+    RefreshCreatureTemplateClientCache(sObjectMgr->_creatureTemplateStore[templateId]);
 
     _customNpcStore[key].spawns = spawns;
     ReloadSpawnedCustomNpcs(key);

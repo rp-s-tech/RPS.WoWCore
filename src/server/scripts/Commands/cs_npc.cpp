@@ -188,7 +188,13 @@ public:
         if (!creature)
             return false;
 
-		handler->PSendSysMessage("Creature name: %s [GUID: %s]", creature->GetName().c_str(), std::to_string(db_guid).c_str());
+        if (sRoleplay->IsCustomNpcEntry(id))
+        {
+            sRoleplay->LoadCustomNpcSpawn(id, db_guid);
+            handler->PSendSysMessage("Creature name: %s [GUID: %llu, variation: %u]", creature->GetName().c_str(), uint64(db_guid), creature->GetCurrentEquipmentId());
+        }
+        else
+            handler->PSendSysMessage("Creature name: %s [GUID: %s]", creature->GetName().c_str(), std::to_string(db_guid).c_str());
         sObjectMgr->AddCreatureToGrid(sObjectMgr->GetCreatureData(db_guid));
         return true;
     }

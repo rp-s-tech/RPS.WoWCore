@@ -1378,7 +1378,11 @@ bool Roleplay::ApplyCustomNpcToCreature(std::string const& key, Creature* creatu
     }
 
     if (variationId > cTemplate.Models.size())
-        variationId = 1;
+    {
+        TC_LOG_ERROR("roleplay", "ROLEPLAY: Apply custom NPC '{}' failed: variation {} is outside model count {}.",
+            key, uint32(variationId), cTemplate.Models.size());
+        return false;
+    }
 
     ApplyCustomNpcStateToCreature(creature, templateId, variationId);
 
@@ -1925,21 +1929,10 @@ void Roleplay::SaveCustomNpcOwnerToDb(CustomNpcData const& npcData)
     RoleplayDatabase.Execute(stmt);
 }
 
-void Roleplay::SaveNpcCreatureTemplateToDb(CreatureTemplate& cTemplate)
+void Roleplay::RefreshCreatureTemplateClientCache(CreatureTemplate& cTemplate)
 {
-    TC_LOG_DEBUG("roleplay", "ROLEPLAY: Saving creature template id '%u' to DB...", cTemplate.Entry);
-    // "REPLACE INTO creature_template (entry, name, subname, HealthScalingExpansion, RequiredExpansion, faction, unit_class, type, type_flags2, movementId, CreatureDifficultyID) VALUES (?, ?, ?, 8, 0, 35, 1, 7, 2, 100, 204488)"
-    WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_REP_CREATURE_TEMPLATE);
-    int index = 0;
-    stmt->setUInt32(index++, cTemplate.Entry);
-    stmt->setString(index++, cTemplate.Name);
-    stmt->setString(index++, cTemplate.SubName);
-    WorldDatabase.Execute(stmt);
-
-    // Redo cached creatureTemplates
     cTemplate.InitializeQueryData();
 
-    // Resend creature template query packet for npc to all players. Best update we can do atm.
     SessionMap const& smap = sWorld->GetAllSessions();
     for (SessionMap::const_iterator iter = smap.begin(); iter != smap.end(); ++iter)
     {
@@ -1952,7 +1945,8 @@ void Roleplay::SaveNpcCreatureTemplateToDb(CreatureTemplate& cTemplate)
             continue;
 
         TC_LOG_DEBUG("roleplay", "ROLEPLAY: Sending query packet for creatureTemplate '%s' to '%s'.", cTemplate.Name.c_str(), player->GetName().c_str());
-        if (sWorld->getBoolConfig(CONFIG_CACHE_DATA_QUERIES)) {
+        if (sWorld->getBoolConfig(CONFIG_CACHE_DATA_QUERIES))
+        {
             uint32 localeIndex = static_cast<uint32>(session->GetSessionDbLocaleIndex());
             if (localeIndex < TOTAL_LOCALES)
                 session->SendPacket(&cTemplate.QueryData[localeIndex]);
@@ -1963,6 +1957,44 @@ void Roleplay::SaveNpcCreatureTemplateToDb(CreatureTemplate& cTemplate)
             session->SendPacket(&response);
         }
     }
+}
+
+void Roleplay::ReloadCreatureLocaleFromDb(uint32 entry)
+{
+    sObjectMgr->_creatureLocaleStore.erase(entry);
+
+    QueryResult result = WorldDatabase.PQuery(
+        "SELECT locale, Name, NameAlt, Title, TitleAlt FROM creature_template_locale WHERE entry = {}", entry);
+    if (!result)
+        return;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        LocaleConstant locale = GetLocaleByName(fields[0].GetStringView());
+        if (!IsValidLocale(locale) || locale == LOCALE_enUS)
+            continue;
+
+        CreatureLocale& data = sObjectMgr->_creatureLocaleStore[entry];
+        ObjectMgr::AddLocaleString(fields[1].GetStringView(), locale, data.Name);
+        ObjectMgr::AddLocaleString(fields[2].GetStringView(), locale, data.NameAlt);
+        ObjectMgr::AddLocaleString(fields[3].GetStringView(), locale, data.Title);
+        ObjectMgr::AddLocaleString(fields[4].GetStringView(), locale, data.TitleAlt);
+    } while (result->NextRow());
+}
+
+void Roleplay::SaveNpcCreatureTemplateToDb(CreatureTemplate& cTemplate)
+{
+    TC_LOG_DEBUG("roleplay", "ROLEPLAY: Saving creature template id '%u' to DB...", cTemplate.Entry);
+    // "REPLACE INTO creature_template (entry, name, subname, HealthScalingExpansion, RequiredExpansion, faction, unit_class, type, type_flags2, movementId, CreatureDifficultyID) VALUES (?, ?, ?, 8, 0, 35, 1, 7, 2, 100, 204488)"
+    WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_REP_CREATURE_TEMPLATE);
+    int index = 0;
+    stmt->setUInt32(index++, cTemplate.Entry);
+    stmt->setString(index++, cTemplate.Name);
+    stmt->setString(index++, cTemplate.SubName);
+    WorldDatabase.Execute(stmt);
+
+    RefreshCreatureTemplateClientCache(cTemplate);
 }
 
 void Roleplay::SaveNpcEquipmentInfoToDb(uint32 templateId, uint8 variationId)

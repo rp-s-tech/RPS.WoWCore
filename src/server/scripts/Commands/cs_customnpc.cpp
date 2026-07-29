@@ -431,9 +431,15 @@ public:
         return true;
     }
 
-    static bool HandleCustomNpcApplyCommand(ChatHandler* handler, std::string const& key, Optional<uint8> variationId)
+    static bool HandleCustomNpcApplyCommand(ChatHandler* handler, uint8 variation)
     {
-        uint8 variation = variationId.value_or(1);
+        if (variation < 1)
+        {
+            handler->SendSysMessage("Variation must be 1 or higher.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
         Player* player = handler->GetPlayer();
         ObjectGuid::LowType selectedGuid = sRoleplay->GetSelectedCreatureGuidFromPlayer(player->GetGUID().GetCounter());
         Creature* creature = selectedGuid ? sRoleplay->GetAnyCreature(selectedGuid) : nullptr;
@@ -444,14 +450,31 @@ public:
             return false;
         }
 
-        if (!sRoleplay->ApplyCustomNpcToCreature(key, creature, variation))
+        std::string const* key = sRoleplay->GetCustomNpcKeyForEntry(creature->GetEntry());
+        if (!key)
         {
-            handler->PSendSysMessage("Custom NPC %s was not applied to selected creature.", key.c_str());
+            handler->SendSysMessage("Selected creature is not a custom NPC.");
             handler->SetSentErrorMessage(true);
             return false;
         }
 
-        handler->PSendSysMessage("Custom NPC %s variation %u applied to selected creature.", key.c_str(), variation);
+        uint8 modelCount = sRoleplay->GetModelVariationCountForNpc(*key);
+        if (variation > modelCount)
+        {
+            handler->PSendSysMessage("Custom NPC %s has only %u model variation(s). Variation %u does not exist.",
+                key->c_str(), modelCount, variation);
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        if (!sRoleplay->ApplyCustomNpcToCreature(*key, creature, variation))
+        {
+            handler->PSendSysMessage("Failed to apply variation %u to selected creature.", variation);
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        handler->PSendSysMessage("Applied custom NPC %s variation %u to selected creature.", key->c_str(), variation);
         return true;
     }
 
@@ -512,6 +535,10 @@ public:
             return false;
         }
 
+        uint8 variation = creature->GetCurrentEquipmentId();
+        if (!variation)
+            variation = 1;
+
         PhasingHandler::InheritPhaseShift(creature, chr);
         creature->SaveToDB(map->GetId(), { map->GetDifficultyID() });
         ObjectGuid::LowType db_guid = creature->GetSpawnId();
@@ -533,7 +560,7 @@ public:
         sRoleplay->SetCreatureSelectionForPlayer(chr->GetGUID().GetCounter(), creature->GetSpawnId());
 
         sRoleplay->LoadCustomNpcSpawn(id, db_guid);
-        handler->PSendSysMessage("Custom NPC %s spawned!", name.c_str());
+        handler->PSendSysMessage("Custom NPC %s spawned (variation %u).", name.c_str(), variation);
         return true;
     }
 
@@ -547,7 +574,7 @@ public:
 
         Player* chr = handler->GetSession()->GetPlayer();
         chr->SummonCreature(sRoleplay->GetEntryIdForNpc(key), chr->GetPosition(), TEMPSUMMON_CORPSE_DESPAWN, 30s);
-        handler->PSendSysMessage("Custom NPC %s spawned!", key.c_str());
+        handler->PSendSysMessage("Custom NPC %s temporarily summoned (random variation if multiple exist).", key.c_str());
         return true;
     }
 
@@ -1655,28 +1682,9 @@ public:
         return HandleCustomNpcRemoveVariationCommand(handler, key, variationId);
     }
 
-    static bool HandleCustomNpcModelApplyCommand(ChatHandler* handler, std::string const& key, uint8 variation)
+    static bool HandleCustomNpcModelApplyCommand(ChatHandler* handler, uint8 variation)
     {
-        Player* player = handler->GetPlayer();
-        ObjectGuid::LowType selectedGuid = sRoleplay->GetSelectedCreatureGuidFromPlayer(player->GetGUID().GetCounter());
-        Creature* creature = selectedGuid ? sRoleplay->GetAnyCreature(selectedGuid) : nullptr;
-        if (!creature)
-        {
-            handler->SendSysMessage("No selected creature found. Use .npc select first.");
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
-
-        std::string error;
-        if (!sRoleplay->ApplyCustomNpcModelVariationToCreature(key, creature, variation, error))
-        {
-            handler->PSendSysMessage("Failed: %s", error.c_str());
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
-
-        handler->PSendSysMessage("Applied model variation %u of %s to selected creature.", variation, key.c_str());
-        return true;
+        return HandleCustomNpcApplyCommand(handler, variation);
     }
 
     static bool HandleCustomNpcCloneCustomCommand(ChatHandler* handler, std::string const& sourceKey, Tail displayName, Optional<uint8> sourceVariation)
