@@ -3131,17 +3131,23 @@ void Unit::SetCurrentCastSpell(Spell* pSpell)
         }
         case CURRENT_CHANNELED_SPELL:
         {
-            // channel spells always break generic non-delayed and any channeled spells
-            InterruptSpell(CURRENT_GENERIC_SPELL, false);
+            // channel spells always break other channeled spells
             InterruptSpell(CURRENT_CHANNELED_SPELL);
 
-            // it also does break autorepeat if not Auto Shot
-            if (m_currentSpells[CURRENT_AUTOREPEAT_SPELL] &&
-                m_currentSpells[CURRENT_AUTOREPEAT_SPELL]->GetSpellInfo()->Id != 75)
-                InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
-
             if (!pSpell->GetSpellInfo()->HasAttribute(SPELL_ATTR5_ALLOW_ACTIONS_DURING_CHANNEL))
+            {
+                // channel spells break generic non-delayed
+                if (m_currentSpells[CURRENT_GENERIC_SPELL]
+                    && !m_currentSpells[CURRENT_GENERIC_SPELL]->GetSpellInfo()->HasAttribute(SPELL_ATTR9_ALLOW_CAST_WHILE_CHANNELING))
+                    InterruptSpell(CURRENT_GENERIC_SPELL, false);
+
+                // it also does break autorepeat if not Auto Shot
+                if (m_currentSpells[CURRENT_AUTOREPEAT_SPELL] &&
+                    m_currentSpells[CURRENT_AUTOREPEAT_SPELL]->GetSpellInfo()->Id != 75)
+                    InterruptSpell(CURRENT_AUTOREPEAT_SPELL);
+
                 AddUnitState(UNIT_STATE_CASTING);
+            }
 
             break;
         }
@@ -3155,7 +3161,11 @@ void Unit::SetCurrentCastSpell(Spell* pSpell)
             {
                 // generic autorepeats break generic non-delayed and channeled non-delayed spells
                 InterruptSpell(CURRENT_GENERIC_SPELL, false);
-                InterruptSpell(CURRENT_CHANNELED_SPELL, false);
+
+                if (m_currentSpells[CURRENT_CHANNELED_SPELL]
+                    && !m_currentSpells[CURRENT_CHANNELED_SPELL]->GetSpellInfo()->HasAttribute(SPELL_ATTR5_ALLOW_ACTIONS_DURING_CHANNEL)
+                    && !pSpell->GetSpellInfo()->HasAttribute(SPELL_ATTR9_ALLOW_CAST_WHILE_CHANNELING))
+                    InterruptSpell(CURRENT_CHANNELED_SPELL, false);
             }
 
             break;
@@ -3216,6 +3226,24 @@ void Unit::FinishSpell(CurrentSpellTypes spellType, SpellCastResult result /*= S
         spell->SendChannelUpdate(0, result);
 
     spell->finish(result);
+}
+
+void Unit::CancelAutoRepeatSpell()
+{
+    if (Spell* spell = m_currentSpells[CURRENT_AUTOREPEAT_SPELL])
+    {
+        if (!spell->IsInterruptable() || spell->getState() == SPELL_STATE_LAUNCHED || spell->getState() == SPELL_STATE_IDLE)
+        {
+            m_currentSpells[CURRENT_AUTOREPEAT_SPELL] = nullptr;
+            spell->SetReferencedFromCurrent(false);
+        }
+        else
+            spell->cancel(SPELL_FAILED_INTERRUPTED);
+
+        // send autorepeat cancel message for autorepeat spells
+        if (Player* player = ToPlayer())
+            player->SendAutoRepeatCancel(this);
+    }
 }
 
 bool Unit::IsNonMeleeSpellCast(bool withDelayed, bool skipChanneled /*= false*/, bool skipAutorepeat /*= false*/, bool isAutoshoot /*= false*/,
@@ -14393,6 +14421,55 @@ void Unit::UpdateMovementForcesModMagnitude()
     }
 }
 
+void Unit::ApplyInertia(int32 id, Milliseconds duration)
+{
+    MovementInfo::Inertia& inertia = m_movementInfo.inertia.emplace();
+    inertia.id = id;
+    inertia.lifetime = duration.count();
+
+    if (Player const* movingPlayer = GetPlayerMovingMe())
+    {
+        WorldPackets::Movement::MoveApplyInertia applyInertia;
+        applyInertia.MoverGUID = GetGUID();
+        applyInertia.SequenceIndex = m_movementCounter++;
+        applyInertia.InertiaID = id;
+        applyInertia.LifetimeMs = duration;
+        movingPlayer->SendDirectMessage(applyInertia.Write());
+    }
+    else
+    {
+        WorldPackets::Movement::MoveUpdateApplyInertia updateApplyInertia;
+        updateApplyInertia.Status = &m_movementInfo;
+        updateApplyInertia.InertiaID = id;
+        updateApplyInertia.LifetimeMs = duration;
+        SendMessageToSet(updateApplyInertia.Write(), true);
+    }
+}
+
+void Unit::RemoveInertia(int32 id)
+{
+    if (!m_movementInfo.inertia || m_movementInfo.inertia->id != id)
+        return;
+
+    m_movementInfo.inertia.reset();
+
+    if (Player const* movingPlayer = GetPlayerMovingMe())
+    {
+        WorldPackets::Movement::MoveRemoveInertia moveRemoveInertia;
+        moveRemoveInertia.MoverGUID = GetGUID();
+        moveRemoveInertia.SequenceIndex = m_movementCounter++;
+        moveRemoveInertia.InertiaID = id;
+        movingPlayer->SendDirectMessage(moveRemoveInertia.Write());
+    }
+    else
+    {
+        WorldPackets::Movement::MoveUpdateRemoveInertia updateRemoveInertia;
+        updateRemoveInertia.Status = &m_movementInfo;
+        updateRemoveInertia.InertiaID = id;
+        SendMessageToSet(updateRemoveInertia.Write(), true);
+    }
+}
+
 void Unit::SetPlayHoverAnim(bool enable, bool sendUpdate /*= true*/)
 {
     if (IsPlayingHoverAnim() == enable)
@@ -14896,7 +14973,6 @@ void Unit::GetFriendlyUnitListInRange(std::list<Unit*>& list, float fMaxSearchRa
 {
     CellCoord p(Trinity::ComputeCellCoord(GetPositionX(), GetPositionY()));
     Cell cell(p);
-    cell.SetNoCreate();
 
     Trinity::AnyFriendlyUnitInObjectRangeCheck u_check(this, this, fMaxSearchRange, false, exceptSelf);
     Trinity::UnitListSearcher<Trinity::AnyFriendlyUnitInObjectRangeCheck> searcher(this, list, u_check);
@@ -14912,7 +14988,6 @@ void Unit::GetAnyUnitListInRange(std::list<Unit*>& list, float fMaxSearchRange) 
 {
     CellCoord p(Trinity::ComputeCellCoord(GetPositionX(), GetPositionY()));
     Cell cell(p);
-    cell.SetNoCreate();
 
     Trinity::AnyUnitInObjectRangeCheck u_check(this, fMaxSearchRange);
     Trinity::UnitListSearcher<Trinity::AnyUnitInObjectRangeCheck> searcher(this, list, u_check);
@@ -14928,7 +15003,6 @@ void Unit::GetAttackableUnitListInRange(std::list<Unit*>& list, float fMaxSearch
 {
     CellCoord p(Trinity::ComputeCellCoord(GetPositionX(), GetPositionY()));
     Cell cell(p);
-    cell.SetNoCreate();
 
     Trinity::AttackableUnitInObjectRangeCheck u_check(this, fMaxSearchRange);
     Trinity::UnitListSearcher<Trinity::AttackableUnitInObjectRangeCheck> searcher(this, list, u_check);
