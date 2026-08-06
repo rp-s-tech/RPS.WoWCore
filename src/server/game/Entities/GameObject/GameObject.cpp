@@ -1275,11 +1275,12 @@ bool GameObject::Create(uint32 entry, Map* map, Position const& pos, QuaternionD
     if (goInfo->IsLargeGameObject())
         SetVisibilityDistanceOverride(VisibilityDistanceType::Large);
 
-    SetVisibilityDistanceOverride(visibility);
+    // RPS: preserve the template's Infinite AOI; per-spawn visibility may only extend it.
+    if (!goInfo->IsInfiniteGameObject() || visibility > GetVisibilityRange())
+        SetVisibilityDistanceOverride(visibility);
 
-    if (GetVisibilityRange() > SIZE_OF_GRIDS) {
+    if (GetVisibilityRange() >= SIZE_OF_GRIDS)
         GetMap()->AddInfiniteGameObject(this->GetGUID());
-    }
 
     return true;
 }
