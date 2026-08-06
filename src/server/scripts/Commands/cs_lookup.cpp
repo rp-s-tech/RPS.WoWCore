@@ -34,9 +34,11 @@ EndScriptData */
 #include "ReputationMgr.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
+#include "Util.h"
 #include "World.h"
 #include "WorldSession.h"
 #include <sstream>
+#include <vector>
 
 #if TRINITY_COMPILER_IS_GCC
 #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
@@ -67,7 +69,8 @@ public:
             { "item",     rbac::RBAC_PERM_COMMAND_LOOKUP_ITEM,     true, &HandleLookupItemCommand,     "" },
             { "item id",  rbac::RBAC_PERM_COMMAND_LOOKUP_ITEM_ID,  true, &HandleLookupItemIdCommand,   "" },
             { "item set", rbac::RBAC_PERM_COMMAND_LOOKUP_ITEMSET,  true, &HandleLookupItemSetCommand,  "" },
-            { "object",   rbac::RBAC_PERM_COMMAND_LOOKUP_OBJECT,   true, &HandleLookupObjectCommand,   "" },
+            { "object",      rbac::RBAC_PERM_COMMAND_LOOKUP_OBJECT, true, &HandleLookupObjectCommand,     "" },
+            { "object like", rbac::RBAC_PERM_COMMAND_LOOKUP_OBJECT, true, &HandleLookupObjectLikeCommand, "" },
             { "quest",    rbac::RBAC_PERM_COMMAND_LOOKUP_QUEST,    true, &HandleLookupQuestCommand,    "" },
             { "quest id", rbac::RBAC_PERM_COMMAND_LOOKUP_QUEST_ID, true, &HandleLookupQuestIdCommand,  "" },
             { "player",   lookupPlayerCommandTable },
@@ -614,6 +617,91 @@ public:
                 if (!found)
                     found = true;
             }
+        }
+
+        if (!found)
+            handler->SendSysMessage(LANG_COMMAND_NOGAMEOBJECTFOUND);
+
+        return true;
+    }
+
+    // AND-match: every space-separated token must be a substring of the GO name
+    // (case-insensitive). Example: .lo ob like wmo expansion10 kobold house
+    static bool HandleLookupObjectLikeCommand(ChatHandler* handler, char const* args)
+    {
+        if (!args || !*args)
+            return false;
+
+        std::vector<std::wstring> tokens;
+        tokens.reserve(8);
+        for (std::string_view part : Trinity::Tokenize(args, ' ', false))
+        {
+            if (part.empty())
+                continue;
+
+            std::wstring wToken;
+            if (!Utf8toWStr(part, wToken))
+                return false;
+
+            wstrToLower(wToken);
+            if (!wToken.empty())
+                tokens.push_back(std::move(wToken));
+        }
+
+        if (tokens.empty())
+            return false;
+
+        auto matchesAll = [&tokens](std::string const& name) -> bool
+        {
+            for (std::wstring const& token : tokens)
+                if (!Utf8FitTo(name, token))
+                    return false;
+            return true;
+        };
+
+        bool found = false;
+        uint32 count = 0;
+        uint32 maxResults = sWorld->getIntConfig(CONFIG_MAX_RESULTS_LOOKUP_COMMANDS);
+        // Path-style GO names (go-display-import) can match broadly; keep chat usable.
+        if (!maxResults)
+            maxResults = 100;
+
+        GameObjectTemplateContainer const& gotc = sObjectMgr->GetGameObjectTemplates();
+        for (auto const& gameObjectTemplatePair : gotc)
+        {
+            std::string const* matchedName = nullptr;
+
+            uint8 localeIndex = handler->GetSessionDbLocaleIndex();
+            if (GameObjectLocale const* objectLocale = sObjectMgr->GetGameObjectLocale(gameObjectTemplatePair.first))
+            {
+                if (objectLocale->Name.size() > localeIndex && !objectLocale->Name[localeIndex].empty())
+                {
+                    std::string const& localeName = objectLocale->Name[localeIndex];
+                    if (matchesAll(localeName))
+                        matchedName = &localeName;
+                }
+            }
+
+            if (!matchedName)
+            {
+                std::string const& name = gameObjectTemplatePair.second.name;
+                if (name.empty() || !matchesAll(name))
+                    continue;
+                matchedName = &name;
+            }
+
+            if (maxResults && count++ == maxResults)
+            {
+                handler->PSendSysMessage(LANG_COMMAND_LOOKUP_MAX_RESULTS, maxResults);
+                return true;
+            }
+
+            if (handler->GetSession())
+                handler->PSendSysMessage(LANG_GO_ENTRY_LIST_CHAT, gameObjectTemplatePair.first, gameObjectTemplatePair.first, matchedName->c_str());
+            else
+                handler->PSendSysMessage(LANG_GO_ENTRY_LIST_CONSOLE, gameObjectTemplatePair.first, matchedName->c_str());
+
+            found = true;
         }
 
         if (!found)

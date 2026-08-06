@@ -1,5 +1,8 @@
 /*
- * NobleNext — .gobtele command.
+ * NobleNext — .gobject tele / .gobject teleport (set GO gossip teleport destination).
+ *
+ * Nested under vanilla `gobject` so `.gob …` is no longer ambiguous with a
+ * top-level `.gobtele` (both names start with "gob").
  */
 
 #include "noble_next_gobtele_handler.h"
@@ -21,9 +24,16 @@ namespace RoleplayCore::NobleNext
 
         std::span<ChatCommandBuilder const> GetCommands() const override
         {
+            // Merges into cs_gobject.cpp's `gobject` node (LoadFromBuilder appends subcommands).
+            static ChatCommandTable gobjectTeleTable =
+            {
+                { "tele",     HandleGobTele, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "teleport", HandleGobTele, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+
             static ChatCommandTable commandTable =
             {
-                { "gobtele", HandleGobTele, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "gobject", gobjectTeleTable },
             };
             return commandTable;
         }

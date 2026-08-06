@@ -59,10 +59,10 @@ namespace RoleplayCore::NobleNext
 
             handler->SendSysMessage("NobleNext GM-команды (C++):");
             handler->SendSysMessage("  .poi*, .poilist, .weather, .daytime, .setgrouptime");
-            handler->SendSysMessage("  .gobtele, .movego, .wpmove/.wpgo, .pet*, .npccontrol");
+            handler->SendSysMessage("  .gob tele <guid>, .movego, .wpmove/.wpgo, .pet*, .npccontrol");
             handler->SendSysMessage("  .nnsay/.nnyell, .sethp/.setbuff/.npcsetstat, .wakeup");
-            handler->SendSysMessage("Vanilla вместо кастомных:");
-            handler->SendSysMessage("  .gob delete/.gob near, .npc delete, .summon, .modify phase/scale");
+            handler->SendSysMessage("Vanilla / TC:");
+            handler->SendSysMessage("  .gob add/.gob delete/.gob near, .npc delete, .summon, .modify phase/scale");
             return true;
         }
 
