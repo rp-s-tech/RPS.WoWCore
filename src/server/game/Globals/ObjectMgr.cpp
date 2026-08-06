@@ -9053,47 +9053,88 @@ void ObjectMgr::LoadCreatureOutfits()
 
     _creatureOutfitStore.clear();
 
+    // Roleplay/Dress NPCs: allied/new player races often lack creature_model_info rows.
+    // Map them to a base race so bounding/reach/gender data can be reused.
     std::map<int, Races> newRaceToOldRace = {
-        {/*RACE_NIGHTBORNE*/            27, RACE_NIGHTELF},
-        {/*RACE_HIGHMOUNTAIN_TAUREN*/   28, RACE_TAUREN},
-        {/*RACE_VOID_ELF*/              29, RACE_BLOODELF},
-        {/*RACE_LIGHTFORGED_DRAENEI*/   30, RACE_DRAENEI},
-        {/*RACE_ZANDALARI_TROLL*/       31, RACE_TROLL},
-        {/*RACE_KUL_TIRAN*/             32, RACE_DRAENEI},
-        {/*RACE_THIN_HUMAN*/            33, RACE_NIGHTELF},
-        {/*RACE_DARK_IRON_DWARF*/       34, RACE_DWARF},
-        {/*RACE_VULPERA*/               35, RACE_GNOME},
-        {/*RACE_MAGHAR_ORC*/            36, RACE_ORC},
-        {/*RACE_MECHAGNOME*/            37, RACE_GNOME},
+        {RACE_NIGHTBORNE,             RACE_NIGHTELF},
+        {RACE_HIGHMOUNTAIN_TAUREN,    RACE_TAUREN},
+        {RACE_VOID_ELF,               RACE_BLOODELF},
+        {RACE_LIGHTFORGED_DRAENEI,    RACE_DRAENEI},
+        {RACE_ZANDALARI_TROLL,        RACE_TROLL},
+        {RACE_KUL_TIRAN,              RACE_HUMAN},
+        {/*RACE_THIN_HUMAN*/ 33,      RACE_NIGHTELF},
+        {RACE_DARK_IRON_DWARF,        RACE_DWARF},
+        {RACE_VULPERA,                RACE_GNOME},
+        {RACE_MAGHAR_ORC,             RACE_ORC},
+        {RACE_MECHAGNOME,             RACE_GNOME},
+        {RACE_DRACTHYR_ALLIANCE,      RACE_BLOODELF},
+        {RACE_DRACTHYR_HORDE,         RACE_BLOODELF},
+        {RACE_EARTHEN_DWARF_HORDE,    RACE_DWARF},
+        {RACE_EARTHEN_DWARF_ALLIANCE, RACE_DWARF},
+        {RACE_HARANIR_ALLIANCE,       RACE_NIGHTELF},
+        {RACE_HARANIR_HORDE,          RACE_NIGHTELF},
+    };
+
+    auto ensureDressNpcModelInfo = [this](ChrModelEntry const* model, Gender gender, char const* raceName)
+    {
+        if (!model || GetCreatureModelInfo(model->DisplayID))
+            return;
+
+        if (ChrModelEntry const* humanModel = sDB2Manager.GetChrModel(RACE_HUMAN, uint8(gender)))
+        {
+            if (CreatureModelInfo const* humanInfo = GetCreatureModelInfo(humanModel->DisplayID))
+            {
+                _creatureModelStore[model->DisplayID] = *humanInfo;
+                _creatureModelStore[model->DisplayID].gender = int8(gender);
+                TC_LOG_WARN("server.loading", "Dress NPCs: synthesized creature_model_info for display {} ({} {}) from human fallback.",
+                    model->DisplayID, raceName && raceName[0] ? raceName : "unnamed-race", gender == GENDER_FEMALE ? "Female" : "Male");
+                return;
+            }
+        }
+
+        CreatureModelInfo& info = _creatureModelStore[model->DisplayID];
+        info.bounding_radius = DEFAULT_PLAYER_BOUNDING_RADIUS;
+        info.combat_reach = DEFAULT_PLAYER_COMBAT_REACH;
+        info.gender = int8(gender);
+        info.displayId_other_gender = 0;
+        info.is_trigger = false;
+        TC_LOG_WARN("server.loading", "Dress NPCs: created stub creature_model_info for display {} ({} {}).",
+            model->DisplayID, raceName && raceName[0] ? raceName : "unnamed-race", gender == GENDER_FEMALE ? "Female" : "Male");
     };
 
     for (auto const& r : newRaceToOldRace)
     {
-        auto* newMaleModel = sDB2Manager.GetChrModel(r.first, GENDER_MALE);
-        auto* newFemaleModel = sDB2Manager.GetChrModel(r.first, GENDER_FEMALE);
-        auto* oldMaleModel = sDB2Manager.GetChrModel(r.second, GENDER_MALE);
-        auto* oldFemaleModel = sDB2Manager.GetChrModel(r.second, GENDER_FEMALE);
-        if (!newMaleModel || !GetCreatureModelInfo(newMaleModel->DisplayID))
+        ChrModelEntry const* newMaleModel = sDB2Manager.GetChrModel(r.first, GENDER_MALE);
+        ChrModelEntry const* newFemaleModel = sDB2Manager.GetChrModel(r.first, GENDER_FEMALE);
+        ChrModelEntry const* oldMaleModel = sDB2Manager.GetChrModel(r.second, GENDER_MALE);
+        ChrModelEntry const* oldFemaleModel = sDB2Manager.GetChrModel(r.second, GENDER_FEMALE);
+
+        if (newMaleModel && !GetCreatureModelInfo(newMaleModel->DisplayID))
         {
-            auto* info = oldMaleModel ? GetCreatureModelInfo(oldMaleModel->DisplayID) : nullptr;
-            ASSERT(info, "Dress NPCs: New race has no info for male and old race has no info either");
-            _creatureModelStore[newMaleModel->DisplayID] = *info;
+            if (CreatureModelInfo const* info = oldMaleModel ? GetCreatureModelInfo(oldMaleModel->DisplayID) : nullptr)
+                _creatureModelStore[newMaleModel->DisplayID] = *info;
+            else
+                ensureDressNpcModelInfo(newMaleModel, GENDER_MALE, sDB2Manager.GetChrRaceName(uint8(r.first)));
         }
-        if (!newFemaleModel || !GetCreatureModelInfo(newFemaleModel->DisplayID))
+
+        if (newFemaleModel && !GetCreatureModelInfo(newFemaleModel->DisplayID))
         {
-            auto* info = oldFemaleModel ? GetCreatureModelInfo(oldFemaleModel->DisplayID) : nullptr;
-            ASSERT(info, "Dress NPCs: New race has no info for female and old race has no info either");
-            _creatureModelStore[newFemaleModel->DisplayID] = *info;
+            if (CreatureModelInfo const* info = oldFemaleModel ? GetCreatureModelInfo(oldFemaleModel->DisplayID) : nullptr)
+                _creatureModelStore[newFemaleModel->DisplayID] = *info;
+            else
+                ensureDressNpcModelInfo(newFemaleModel, GENDER_FEMALE, sDB2Manager.GetChrRaceName(uint8(r.first)));
         }
     }
 
-    for (auto* e : sChrRacesStore)
+    for (ChrRacesEntry const* e : sChrRacesStore)
     {
-        auto* maleModel = sDB2Manager.GetChrModel(e->ID, GENDER_MALE);
-        auto* femaleModel = sDB2Manager.GetChrModel(e->ID, GENDER_FEMALE);
-        ASSERT(maleModel && femaleModel, "Dress NPCs cannot find male or female model from DBC with race %s", e->Name[DEFAULT_LOCALE]);
-        ASSERT(GetCreatureModelInfo(maleModel->DisplayID), "Dress NPCs requires an entry in creature_model_info for modelid %u (%s Male)", maleModel->DisplayID, e->Name[DEFAULT_LOCALE]);
-        ASSERT(GetCreatureModelInfo(femaleModel->DisplayID), "Dress NPCs requires an entry in creature_model_info for modelid %u (%s Female)", femaleModel->DisplayID, e->Name[DEFAULT_LOCALE]);
+        ChrModelEntry const* maleModel = sDB2Manager.GetChrModel(e->ID, GENDER_MALE);
+        ChrModelEntry const* femaleModel = sDB2Manager.GetChrModel(e->ID, GENDER_FEMALE);
+        if (!maleModel || !femaleModel)
+            continue; // companion / non-playable race stubs in ChrRaces
+
+        ensureDressNpcModelInfo(maleModel, GENDER_MALE, e->Name[DEFAULT_LOCALE]);
+        ensureDressNpcModelInfo(femaleModel, GENDER_FEMALE, e->Name[DEFAULT_LOCALE]);
     }
 
     QueryResult result = WorldDatabase.Query("SELECT entry, npcsoundsid, race, class, gender, spellvisualkitid, customizations, "
