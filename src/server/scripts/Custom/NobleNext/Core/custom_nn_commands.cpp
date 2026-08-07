@@ -45,7 +45,7 @@ namespace RoleplayCore::NobleNext
 
             handler->SendSysMessage("[NobleNext] Статус модулей (C++ + Lua)");
             handler->SendSysMessage("  POI — Custom/Poi (C++)");
-            handler->SendSysMessage("  Weather, Daytime, GobTele, GobMover — Custom/NobleNext (C++)");
+            handler->SendSysMessage("  Weather, Daytime, GobTele, GobMover, GobGroup — Custom/NobleNext (C++)");
             handler->SendSysMessage("  Waypoints, Pet, Army, Master, Battle — Custom/NobleNext (C++)");
             handler->SendSysMessage("  AIO UI — NobleNextLua (Eluna)");
             handler->SendSysMessage("Документация: Docs/NOBLENEXT.md");
@@ -60,6 +60,7 @@ namespace RoleplayCore::NobleNext
             handler->SendSysMessage("NobleNext GM-команды (C++):");
             handler->SendSysMessage("  .poi*, .poilist, .weather, .daytime, .setgrouptime");
             handler->SendSysMessage("  .gob tele <guid>, .movego, .wpmove/.wpgo, .pet*, .npccontrol");
+            handler->SendSysMessage("  .gobject group info <object-guid> / create|add|move|turn … / delete <group-guid> full-force");
             handler->SendSysMessage("  .nnsay/.nnyell, .sethp/.setbuff/.npcsetstat, .wakeup");
             handler->SendSysMessage("Vanilla / TC:");
             handler->SendSysMessage("  .gob add/.gob delete/.gob near, .npc delete, .summon, .modify phase/scale");

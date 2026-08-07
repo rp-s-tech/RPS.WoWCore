@@ -5,6 +5,8 @@
 #include "noble_next_gobmover_handler.h"
 
 #include "GameObject.h"
+#include "Map.h"
+#include "Object.h"
 #include "Player.h"
 #include "World.h"
 
@@ -33,17 +35,17 @@ namespace RoleplayCore::NobleNext
             return nullptr;
 
         std::list<GameObject*> goList;
-        player->GetGameObjectListWithEntryInGrid(goList, 0, range);
+        player->GetGameObjectListWithOptionsInGrid(goList, range, { .IgnorePhases = true });
 
         GameObject* nearest = nullptr;
         float nearestDist = range;
 
         for (GameObject* go : goList)
         {
-            if (!go || !player->InSamePhase(go))
+            if (!go)
                 continue;
 
-            float dist = player->GetExactDist(go);
+            float const dist = player->GetExactDist(go);
             if (dist <= nearestDist)
             {
                 nearestDist = dist;
@@ -54,7 +56,7 @@ namespace RoleplayCore::NobleNext
         return nearest;
     }
 
-    bool GobMoverHandler::NotifyClientTarget(Player* player, uint32 spawnId, std::string const& name)
+    bool GobMoverHandler::NotifyClientTarget(Player* player, ObjectGuid::LowType spawnId, std::string const& name)
     {
 #ifdef ELUNA
         Eluna* eluna = sWorld->GetEluna();
@@ -77,7 +79,7 @@ namespace RoleplayCore::NobleNext
         }
 
         eluna->Push(player);
-        eluna->Push(spawnId);
+        eluna->Push(static_cast<unsigned long long>(spawnId));
         eluna->Push(name);
         return eluna->ExecuteCall(3, 0);
 #else
@@ -91,6 +93,26 @@ namespace RoleplayCore::NobleNext
     bool GobMoverHandler::SelectNearestTarget(Player* player, float range) const
     {
         GameObject* go = FindNearestGameObject(player, range);
+        if (!go)
+            return false;
+
+        std::string name;
+        if (GameObjectTemplate const* info = go->GetGOInfo())
+            name = info->name;
+
+        return NotifyClientTarget(player, go->GetSpawnId(), name);
+    }
+
+    bool GobMoverHandler::SelectBySpawnId(Player* player, ObjectGuid::LowType spawnId) const
+    {
+        if (!player || !spawnId)
+            return false;
+
+        Map* map = player->GetMap();
+        if (!map)
+            return false;
+
+        GameObject* go = map->GetGameObjectBySpawnId(spawnId);
         if (!go)
             return false;
 

@@ -8,6 +8,8 @@ void AddSC_NobleNextDaytimeCommands();
 void AddSC_NobleNextGobTeleCommands();
 void AddSC_NobleNextGobTeleScripts();
 void AddSC_NobleNextGobMoverCommands();
+void AddSC_NobleNextGobGroupCommands();
+void AddSC_NobleNextGobGroupScripts();
 void AddSC_NobleNextCoreCommands();
 void AddSC_NobleNextWaypointsCommands();
 void AddSC_NobleNextPetCommands();
@@ -26,6 +28,8 @@ void AddSC_NobleNextScripts()
     AddSC_NobleNextGobTeleCommands();
     AddSC_NobleNextGobTeleScripts();
     AddSC_NobleNextGobMoverCommands();
+    AddSC_NobleNextGobGroupCommands();
+    AddSC_NobleNextGobGroupScripts();
     AddSC_NobleNextCoreCommands();
     AddSC_NobleNextWaypointsCommands();
     AddSC_NobleNextPetCommands();

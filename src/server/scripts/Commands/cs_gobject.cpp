@@ -42,6 +42,7 @@ EndScriptData */
 #include "PoolMgr.h"
 #include "RBAC.h"
 #include "WorldSession.h"
+#include "noble_next_gobgroup_hook.h"
 #include <sstream>
 
 using namespace Trinity::ChatCommands;
@@ -304,6 +305,14 @@ public:
     //delete object by selection or guid
     static bool HandleGameObjectDeleteCommand(ChatHandler* handler, GameObjectSpawnId spawnId)
     {
+        std::string deleteError;
+        if (!NobleNext_CanGameObjectBeDeleted(*spawnId, deleteError))
+        {
+            handler->SendSysMessage(deleteError.c_str());
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
         if (GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(spawnId))
         {
             Player const* const player = handler->GetSession()->GetPlayer();
@@ -323,6 +332,7 @@ public:
 
         if (GameObject::DeleteFromDB(spawnId))
         {
+            NobleNext_OnGameObjectDeleted(*spawnId);
             handler->PSendSysMessage(LANG_COMMAND_DELOBJMESSAGE, std::to_string(*spawnId).c_str());
             return true;
         }
@@ -369,6 +379,8 @@ public:
         object = GameObject::CreateGameObjectFromDB(guidLow, map);
         if (!object)
             return false;
+
+        NobleNext_OnGameObjectTransformSaved(*guidLow);
 
         handler->PSendSysMessage(LANG_COMMAND_TURNOBJMESSAGE, std::to_string(object->GetSpawnId()).c_str(), object->GetGOInfo()->name.c_str(), object->GetGUID().ToString().c_str(), object->GetOrientation());
         return true;
@@ -423,6 +435,8 @@ public:
         object = GameObject::CreateGameObjectFromDB(guidLow, map);
         if (!object)
             return false;
+
+        NobleNext_OnGameObjectTransformSaved(*guidLow);
 
         handler->PSendSysMessage(LANG_COMMAND_MOVEOBJMESSAGE, std::to_string(object->GetSpawnId()).c_str(), object->GetGOInfo()->name.c_str(), object->GetGUID().ToString().c_str());
         return true;

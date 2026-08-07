@@ -7,12 +7,16 @@
 
 #include "Chat.h"
 #include "ChatCommand.h"
+#include "ChatCommandTags.h"
 #include "Player.h"
 #include "RBAC.h"
+
+#include <fmt/format.h>
 
 namespace RoleplayCore::NobleNext
 {
     using namespace Trinity::ChatCommands;
+    using GameObjectSpawnId = Variant<Hyperlink<gameobject>, ObjectGuid::LowType>;
 
     class GobMoverCommands : public CommandScript
     {
@@ -28,16 +32,32 @@ namespace RoleplayCore::NobleNext
             return commandTable;
         }
 
-        static bool HandleMoveGo(ChatHandler* handler)
+        static bool HandleMoveGo(ChatHandler* handler, Optional<GameObjectSpawnId> spawnId)
         {
             Player* player = handler->GetPlayer();
             if (!player || !HasStaffPermission(player))
                 return false;
 
+            if (spawnId)
+            {
+                ObjectGuid::LowType const id = *spawnId;
+                if (!GobMoverHandler::Instance().SelectBySpawnId(player, id))
+                {
+                    handler->SendSysMessage(fmt::format(
+                        "[GobMover] Live GO spawnId {} не загружен на карте игрока "
+                        "(.gob near видит DB spawn; подойдите ближе, чтобы грид подгрузил объект).",
+                        id).c_str());
+                    return true;
+                }
+                return true;
+            }
+
             if (!GobMoverHandler::Instance().SelectNearestTarget(player))
             {
-                handler->SendSysMessage("[GobMover] GO не найден рядом (радиус 20 ярдов).");
-                return false;
+                handler->SendSysMessage(
+                    "[GobMover] GO не найден рядом (радиус 50 ярдов, IgnorePhases). "
+                    "Укажите GUID: .movego <guid> (из .gob near).");
+                return true;
             }
 
             return true;

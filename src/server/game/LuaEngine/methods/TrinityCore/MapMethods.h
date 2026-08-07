@@ -220,6 +220,20 @@ namespace LuaMap
     }
 
     /**
+     * Returns a live [GameObject] by DB spawnId (guid column in `gameobject`).
+     * Uses the map spawn store — no phase / visibility filter (housing-safe).
+     *
+     * @param number spawnId : gameobject.guid / spawnId
+     * @return [GameObject] gameObject : or nil if not loaded on this map
+     */
+    int GetGameObjectBySpawnId(Eluna* E, Map* map)
+    {
+        ObjectGuid::LowType spawnId = E->CHECKVAL<uint64>(2);
+        E->Push(map->GetGameObjectBySpawnId(spawnId));
+        return 1;
+    }
+
+    /**
      * Sets the [Weather] type based on [WeatherType] and grade supplied.
      *
      * @table
@@ -346,6 +360,7 @@ namespace LuaMap
         { "GetAreaId", &LuaMap::GetAreaId },
         { "GetHeight", &LuaMap::GetHeight },
         { "GetWorldObject", &LuaMap::GetWorldObject },
+        { "GetGameObjectBySpawnId", &LuaMap::GetGameObjectBySpawnId },
 
         // Setters
         { "SetWeather", &LuaMap::SetWeather },

@@ -1321,6 +1321,18 @@ enum TrinityStrings
     LANG_COMMAND_CUSTOMNPC_RACE_LIST_HELP       = 11097,
     LANG_COMMAND_CUSTOMNPC_RACE_OPTIONS_HELP    = 11098,
 
+    LANG_COMMAND_GOBGROUP_HELP                    = 11110, // overview + capabilities
+    LANG_COMMAND_GOBGROUP_CREATE_HELP             = 11111,
+    LANG_COMMAND_GOBGROUP_USE_HELP                = 11112, // use|target
+    LANG_COMMAND_GOBGROUP_ADD_HELP                = 11113, // add|scan|addnear
+    LANG_COMMAND_GOBGROUP_REMOVE_HELP             = 11114, // remove|dissolve|delete full-force
+    LANG_COMMAND_GOBGROUP_INFO_HELP               = 11115, // info <object-guid>|list|check|status|reload
+    LANG_COMMAND_GOBGROUP_CAPTURE_HELP            = 11116,
+    LANG_COMMAND_GOBGROUP_RECALC_HELP             = 11117,
+    LANG_COMMAND_GOBGROUP_SYNC_HELP               = 11118,
+    LANG_COMMAND_GOBGROUP_MOVE_HELP               = 11119, // move|turn|relocate
+    LANG_COMMAND_GOBGROUP_CLEANUP_HELP            = 11120,
+
     LANG_RANDOM_MESSAGE                           = 65002, // %s
     LANG_WP_MOVE_1                                = 65003, // WP MOVE DONE 1 WALK
     LANG_WP_MOVE_2                                = 65004, // WP MOVE DONE 2 RUN
