@@ -44,6 +44,13 @@ namespace RoleplayCore::NobleNext
             if (!player || !HasStaffPermission(player))
                 return false;
 
+            if (player->GetMapId() == GobTeleHandler::HousingMapId)
+            {
+                handler->SendSysMessage(
+                    "Нельзя создать общий GobTele в Housing Map 2783: нужен PrivateHome record.");
+                return false;
+            }
+
             if (!GobTeleHandler::Instance().SetTeleportDestination(player, goGuidLow))
             {
                 handler->SendSysMessage("Ошибка — неверно введён GUID объекта.");

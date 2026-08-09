@@ -10,6 +10,8 @@ void AddSC_NobleNextGobTeleScripts();
 void AddSC_NobleNextGobMoverCommands();
 void AddSC_NobleNextGobGroupCommands();
 void AddSC_NobleNextGobGroupScripts();
+void AddSC_NobleNextRoleplayPhaseCommands();
+void AddSC_NobleNextRoleplayPhaseProtocol();
 void AddSC_NobleNextCoreCommands();
 void AddSC_NobleNextWaypointsCommands();
 void AddSC_NobleNextPetCommands();
@@ -30,6 +32,8 @@ void AddSC_NobleNextScripts()
     AddSC_NobleNextGobMoverCommands();
     AddSC_NobleNextGobGroupCommands();
     AddSC_NobleNextGobGroupScripts();
+    AddSC_NobleNextRoleplayPhaseCommands();
+    AddSC_NobleNextRoleplayPhaseProtocol();
     AddSC_NobleNextCoreCommands();
     AddSC_NobleNextWaypointsCommands();
     AddSC_NobleNextPetCommands();

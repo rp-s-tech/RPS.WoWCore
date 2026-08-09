@@ -1,5 +1,8 @@
 /*
  * NobleNext — spatial GO group transform math + batch SQL writer.
+ *
+ * Full root-quaternion frame. Legacy yaw-only offsets stay valid for yaw-aligned
+ * roots; recalc upgrades stored relatives to full-quat.
  */
 
 #include "noble_next_gobgroup_transform.h"
@@ -11,6 +14,7 @@
 
 #include <G3D/Matrix3.h>
 #include <G3D/Quat.h>
+#include <G3D/Vector3.h>
 #include <algorithm>
 #include <cmath>
 #include <sstream>
@@ -30,6 +34,12 @@ namespace GobGroupTransform
         {
             q.unitize();
             return QuaternionData(float(q.x), float(q.y), float(q.z), float(q.w));
+        }
+
+        G3D::Vector3 Rotate(G3D::Quat q, G3D::Vector3 const& v)
+        {
+            q.unitize();
+            return q.toRotationMatrix() * v;
         }
     }
 
@@ -77,17 +87,30 @@ namespace GobGroupTransform
         return FromG3D(G3D::Quat(G3D::Matrix3::fromEulerAnglesZYX(orientation, 0.0f, 0.0f)));
     }
 
+    QuaternionData ComputeRelativeRotation(QuaternionData const& memberWorld, QuaternionData const& rootWorld)
+    {
+        G3D::Quat root = ToG3D(rootWorld);
+        root.unitize();
+        G3D::Quat const relative = ToG3D(memberWorld) * root.inverse();
+        return FromG3D(relative);
+    }
+
+    QuaternionData ApplyRelativeRotation(QuaternionData const& relative, QuaternionData const& newRootWorld)
+    {
+        G3D::Quat root = ToG3D(newRootWorld);
+        root.unitize();
+        G3D::Quat const world = ToG3D(relative) * root;
+        return FromG3D(world);
+    }
+
     QuaternionData ComputeRelativeRotation(QuaternionData const& memberWorld, float rootOrientation)
     {
-        G3D::Quat const rootYaw = ToG3D(YawQuat(rootOrientation));
-        G3D::Quat const relative = ToG3D(memberWorld) * rootYaw.inverse();
-        return FromG3D(relative);
+        return ComputeRelativeRotation(memberWorld, YawQuat(rootOrientation));
     }
 
     QuaternionData ApplyRelativeRotation(QuaternionData const& relative, float newRootOrientation)
     {
-        G3D::Quat const world = ToG3D(relative) * ToG3D(YawQuat(newRootOrientation));
-        return FromG3D(world);
+        return ApplyRelativeRotation(relative, YawQuat(newRootOrientation));
     }
 
     QuaternionData ApplyRootTilt(QuaternionData const& rootWorld, float oldRootOrientation, float newRootOrientation)
@@ -96,35 +119,58 @@ namespace GobGroupTransform
         return FromG3D(tilt * ToG3D(YawQuat(newRootOrientation)));
     }
 
-    MemberRelativeTransform ComputeRelative(Position const& rootPos, QuaternionData const& /*rootRot*/,
+    MemberRelativeTransform ComputeRelative(Position const& rootPos, QuaternionData const& rootRot,
         Position const& memberPos, QuaternionData const& memberRot)
     {
-        Position const local = rootPos.GetPositionOffsetTo(memberPos);
+        G3D::Vector3 const worldDelta(
+            memberPos.GetPositionX() - rootPos.GetPositionX(),
+            memberPos.GetPositionY() - rootPos.GetPositionY(),
+            memberPos.GetPositionZ() - rootPos.GetPositionZ());
+        G3D::Vector3 const localXYZ = Rotate(ToG3D(rootRot).inverse(), worldDelta);
+
         MemberRelativeTransform rel;
-        rel.OffsetX = local.GetPositionX();
-        rel.OffsetY = local.GetPositionY();
-        rel.OffsetZ = local.GetPositionZ();
-        rel.OffsetO = local.GetOrientation();
-        rel.RelativeRotation = ComputeRelativeRotation(memberRot, rootPos.GetOrientation());
+        rel.OffsetX = float(localXYZ.x);
+        rel.OffsetY = float(localXYZ.y);
+        rel.OffsetZ = float(localXYZ.z);
+        rel.OffsetO = Position::NormalizeOrientation(memberPos.GetOrientation() - rootPos.GetOrientation());
+        rel.RelativeRotation = ComputeRelativeRotation(memberRot, rootRot);
         return rel;
+    }
+
+    Position ApplyLocalOffset(Position const& rootPos, QuaternionData const& rootRot,
+        MemberRelativeTransform const& local)
+    {
+        G3D::Vector3 const worldOffset = Rotate(ToG3D(rootRot),
+            G3D::Vector3(local.OffsetX, local.OffsetY, local.OffsetZ));
+        float const worldO = Position::NormalizeOrientation(rootPos.GetOrientation() + local.OffsetO);
+        return Position(
+            rootPos.GetPositionX() + float(worldOffset.x),
+            rootPos.GetPositionY() + float(worldOffset.y),
+            rootPos.GetPositionZ() + float(worldOffset.z),
+            worldO);
+    }
+
+    Position ApplyLocalOffsetDouble(Position const& rootPos, QuaternionData const& rootRot,
+        MemberRelativeTransform const& local)
+    {
+        G3D::Vector3 const worldOffset = Rotate(ToG3D(rootRot),
+            G3D::Vector3(local.OffsetX, local.OffsetY, local.OffsetZ));
+        double const worldX = double(rootPos.GetPositionX()) + double(worldOffset.x);
+        double const worldY = double(rootPos.GetPositionY()) + double(worldOffset.y);
+        double const worldZ = double(rootPos.GetPositionZ()) + double(worldOffset.z);
+        double const worldO = double(rootPos.GetOrientation()) + double(local.OffsetO);
+        return Position(float(worldX), float(worldY), float(worldZ),
+            Position::NormalizeOrientation(float(worldO)));
     }
 
     Position ApplyLocalOffset(Position const& rootPos, MemberRelativeTransform const& local)
     {
-        Position offset(local.OffsetX, local.OffsetY, local.OffsetZ, local.OffsetO);
-        return rootPos.GetPositionWithOffset(offset);
+        return ApplyLocalOffset(rootPos, YawQuat(rootPos.GetOrientation()), local);
     }
 
     Position ApplyLocalOffsetDouble(Position const& rootPos, MemberRelativeTransform const& local)
     {
-        double const rootO = rootPos.GetOrientation();
-        double const cosO = std::cos(rootO);
-        double const sinO = std::sin(rootO);
-        double const worldX = double(rootPos.GetPositionX()) + double(local.OffsetX) * cosO - double(local.OffsetY) * sinO;
-        double const worldY = double(rootPos.GetPositionY()) + double(local.OffsetY) * cosO + double(local.OffsetX) * sinO;
-        double const worldZ = double(rootPos.GetPositionZ()) + double(local.OffsetZ);
-        double const worldO = double(rootPos.GetOrientation()) + double(local.OffsetO);
-        return Position(float(worldX), float(worldY), float(worldZ), Position::NormalizeOrientation(float(worldO)));
+        return ApplyLocalOffsetDouble(rootPos, YawQuat(rootPos.GetOrientation()), local);
     }
 
     bool BuildPlan(ObjectGuid::LowType rootGuid, uint32 sourceMapId, uint32 targetMapId,
@@ -155,22 +201,21 @@ namespace GobGroupTransform
             return false;
         }
 
+        QuaternionData const unitRootRot = Unitize(newRootRotation);
+
         GroupTransformRow rootRow;
         rootRow.SpawnId = rootGuid;
         rootRow.OldWorld = oldPosIt->second;
         rootRow.NewWorld = newRootPos;
         rootRow.OldRotation = oldRotIt->second;
-        rootRow.NewRotation = Unitize(newRootRotation);
+        rootRow.NewRotation = unitRootRot;
         rootRow.OldMapId = sourceMapId;
         rootRow.NewMapId = targetMapId;
         rootRow.OldCell = Trinity::ComputeCellCoord(rootRow.OldWorld.GetPositionX(), rootRow.OldWorld.GetPositionY());
         rootRow.NewCell = Trinity::ComputeCellCoord(rootRow.NewWorld.GetPositionX(), rootRow.NewWorld.GetPositionY());
         outPlan.Rows.push_back(rootRow);
 
-        double const rootO = newRootPos.GetOrientation();
-        double const cosO = std::cos(rootO);
-        double const sinO = std::sin(rootO);
-        G3D::Quat const newRootYaw = ToG3D(YawQuat(newRootPos.GetOrientation()));
+        G3D::Quat const newRootQuat = ToG3D(unitRootRot);
 
         for (ObjectGuid::LowType memberGuid : memberOrder)
         {
@@ -184,10 +229,12 @@ namespace GobGroupTransform
             }
 
             MemberRelativeTransform const& local = relIt->second;
-            double const worldX = double(newRootPos.GetPositionX()) + double(local.OffsetX) * cosO - double(local.OffsetY) * sinO;
-            double const worldY = double(newRootPos.GetPositionY()) + double(local.OffsetY) * cosO + double(local.OffsetX) * sinO;
-            double const worldZ = double(newRootPos.GetPositionZ()) + double(local.OffsetZ);
-            double const worldO = rootO + double(local.OffsetO);
+            G3D::Vector3 const worldOffset = Rotate(newRootQuat,
+                G3D::Vector3(local.OffsetX, local.OffsetY, local.OffsetZ));
+            double const worldX = double(newRootPos.GetPositionX()) + worldOffset.x;
+            double const worldY = double(newRootPos.GetPositionY()) + worldOffset.y;
+            double const worldZ = double(newRootPos.GetPositionZ()) + worldOffset.z;
+            double const worldO = double(newRootPos.GetOrientation()) + double(local.OffsetO);
 
             if (!std::isfinite(worldX) || !std::isfinite(worldY) || !std::isfinite(worldZ) || !std::isfinite(worldO))
             {
@@ -195,7 +242,7 @@ namespace GobGroupTransform
                 return false;
             }
 
-            G3D::Quat worldQuat = ToG3D(local.RelativeRotation) * newRootYaw;
+            G3D::Quat worldQuat = ToG3D(local.RelativeRotation) * newRootQuat;
             worldQuat.unitize();
             if (!std::isfinite(worldQuat.x) || !std::isfinite(worldQuat.y) || !std::isfinite(worldQuat.z) || !std::isfinite(worldQuat.w))
             {

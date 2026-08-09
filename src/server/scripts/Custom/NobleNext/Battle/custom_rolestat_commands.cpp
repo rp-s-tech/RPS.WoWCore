@@ -87,8 +87,22 @@ namespace RoleplayCore::NobleNext::Battle
 
         std::span<ChatCommandBuilder const> GetCommands() const override
         {
+            static ChatCommandTable npcTable =
+            {
+                { "setstat",       HandleNpcSetStat,       LANG_COMMAND_NPCSTAT_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "setstatradius", HandleNpcSetStatRadius, LANG_COMMAND_NPCSTAT_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "check",         HandleCheckNpcStat,     LANG_COMMAND_NPCSTAT_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "reload",        HandleReloadNpcStats,   LANG_COMMAND_NPCSTAT_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "roll",          HandleNpcRoll,          LANG_COMMAND_NPCROLL_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+            static ChatCommandTable rpsTable =
+            {
+                { "npc", npcTable },
+            };
+
             static ChatCommandTable commandTable =
             {
+                { "rps", rpsTable },
                 { "npcsetstat",       HandleNpcSetStat,       LANG_COMMAND_NPCSTAT_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "npcsetstatradius", HandleNpcSetStatRadius, LANG_COMMAND_NPCSTAT_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "checknpcstat",     HandleCheckNpcStat,     LANG_COMMAND_NPCSTAT_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },

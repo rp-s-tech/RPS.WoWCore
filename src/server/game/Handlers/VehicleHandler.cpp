@@ -99,7 +99,7 @@ void WorldSession::HandleMoveChangeVehicleSeats(WorldPackets::Vehicle::MoveChang
 
     if (moveChangeVehicleSeats.DstVehicle.IsEmpty())
         GetPlayer()->ChangeSeat(-1, moveChangeVehicleSeats.DstSeatIndex != 255);
-    else if (Unit* vehUnit = ObjectAccessor::GetUnit(*GetPlayer(), moveChangeVehicleSeats.DstVehicle))
+    else if (Unit* vehUnit = ObjectAccessor::GetUnit(*GetPlayer(), moveChangeVehicleSeats.DstVehicle); vehUnit && GetPlayer()->CanSeeInPhaseContexts(vehUnit))
         if (Vehicle* vehicle = vehUnit->GetVehicleKit())
             if (vehicle->HasEmptySeat(moveChangeVehicleSeats.DstSeatIndex))
                 vehUnit->HandleSpellClick(GetPlayer(), int8(moveChangeVehicleSeats.DstSeatIndex));
@@ -121,7 +121,7 @@ void WorldSession::HandleRequestVehicleSwitchSeat(WorldPackets::Vehicle::Request
 
     if (vehicle_base->GetGUID() == requestVehicleSwitchSeat.Vehicle)
         GetPlayer()->ChangeSeat(int8(requestVehicleSwitchSeat.SeatIndex));
-    else if (Unit* vehUnit = ObjectAccessor::GetUnit(*GetPlayer(), requestVehicleSwitchSeat.Vehicle))
+    else if (Unit* vehUnit = ObjectAccessor::GetUnit(*GetPlayer(), requestVehicleSwitchSeat.Vehicle); vehUnit && GetPlayer()->CanSeeInPhaseContexts(vehUnit))
         if (Vehicle* vehicle = vehUnit->GetVehicleKit())
             if (vehicle->HasEmptySeat(int8(requestVehicleSwitchSeat.SeatIndex)))
                 vehUnit->HandleSpellClick(GetPlayer(), int8(requestVehicleSwitchSeat.SeatIndex));
@@ -129,7 +129,7 @@ void WorldSession::HandleRequestVehicleSwitchSeat(WorldPackets::Vehicle::Request
 
 void WorldSession::HandleRideVehicleInteract(WorldPackets::Vehicle::RideVehicleInteract& rideVehicleInteract)
 {
-    if (Player* player = ObjectAccessor::GetPlayer(*_player, rideVehicleInteract.Vehicle))
+    if (Player* player = ObjectAccessor::GetPlayer(*_player, rideVehicleInteract.Vehicle); player && _player->CanSeeInPhaseContexts(player))
     {
         if (!player->GetVehicleKit())
             return;

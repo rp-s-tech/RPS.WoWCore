@@ -35,8 +35,24 @@ namespace RoleplayCore::NobleNext
 
         std::span<ChatCommandBuilder const> GetCommands() const override
         {
+            static ChatCommandTable sayTable =
+            {
+                { "say",      HandleNnSay,      rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "sayemote", HandleNnSayEmote, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "emote",    HandleNnEmote,    rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "yell",     HandleNnYell,     rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+            static ChatCommandTable rpsTable =
+            {
+                { "say",     sayTable },
+                { "speech",  sayTable },
+                { "weapon",  HandleWeapon,  LANG_COMMAND_WEAPON_HELP,  rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "npcsave", HandleNpcSave, LANG_COMMAND_NPCSAVE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+
             static ChatCommandTable commandTable =
             {
+                { "rps",         rpsTable },
                 { "nnsay",       HandleNnSay,       rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "nnsayemote",  HandleNnSayEmote,  rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "nnemote",     HandleNnEmote,     rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },

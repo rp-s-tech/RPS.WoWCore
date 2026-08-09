@@ -23,6 +23,9 @@ Category: commandscripts
 EndScriptData */
 
 #include "ScriptMgr.h"
+#include "AccountMgr.h"
+#include "BattlenetAccountMgr.h"
+#include "CharacterCache.h"
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "DatabaseEnv.h"
@@ -41,8 +44,11 @@ EndScriptData */
 #include "Player.h"
 #include "PoolMgr.h"
 #include "RBAC.h"
+#include "RoleplayCommandPhaseGuard.h"
+#include "RoleplayPhaseMgr.h"
 #include "WorldSession.h"
 #include "noble_next_gobgroup_hook.h"
+#include <fmt/format.h>
 #include <sstream>
 
 using namespace Trinity::ChatCommands;
@@ -56,6 +62,145 @@ bool HandleNpcDespawnGroup(ChatHandler* handler, std::vector<Variant<uint32, EXA
 
 class gobject_commandscript : public CommandScript
 {
+    static bool AllowsGameObjectListContext(Player const* player, ObjectGuid::LowType spawnId)
+    {
+        if (!player)
+            return true;
+
+        return RoleplayCommandPhaseGuard::AllowsViewerSpawnContext(
+            RoleplayCommandPhaseGuard::Resolve(player, RoleplayPhaseSpawnType::GameObject, spawnId), false);
+    }
+
+    // Game account username (account.username), not Battle.net email.
+    static std::string ResolveGameAccountUsernameFromBnet(uint32 bnetId)
+    {
+        if (!bnetId)
+            return {};
+
+        // bnetId is uint32 — safe to interpolate.
+        QueryResult result = LoginDatabase.Query(fmt::format(
+            "SELECT username FROM account WHERE battlenet_account = {} ORDER BY battlenet_index ASC, id ASC LIMIT 1",
+            bnetId).c_str());
+        if (!result)
+            return {};
+
+        std::string const username = result->Fetch()[0].GetString();
+        return username.empty() ? std::string{} : username;
+    }
+
+    static std::string ResolveOwnerAccountLabel(ObjectGuid::LowType spawnGuid)
+    {
+        RoleplayDatabasePreparedStatement* stmt = RoleplayDatabase.GetPreparedStatement(Roleplay_SEL_GAMEOBJECTEXTRA_BY_GUID);
+        stmt->setUInt64(0, spawnGuid);
+        PreparedQueryResult result = RoleplayDatabase.Query(stmt);
+        if (!result)
+            return "none";
+
+        Field* fields = result->Fetch();
+        uint32 const bnetId = fields[0].GetUInt32();
+        uint64 const creatorPlayer = fields[1].GetUInt64();
+
+        std::string name;
+        if (creatorPlayer)
+        {
+            ObjectGuid const guid = ObjectGuid::Create<HighGuid::Player>(creatorPlayer);
+            if (uint32 const gameAccountId = sCharacterCache->GetCharacterAccountIdByGuid(guid))
+            {
+                if (AccountMgr::GetName(gameAccountId, name) && !name.empty())
+                    return name;
+            }
+        }
+
+        if (bnetId)
+        {
+            name = ResolveGameAccountUsernameFromBnet(bnetId);
+            if (!name.empty())
+                return name;
+            return fmt::format("#{}", bnetId);
+        }
+
+        return "none";
+    }
+
+    static void PrintGameObjectSpawnDetail(ChatHandler* handler, Player* player, ObjectGuid::LowType guidLow,
+        uint32 entry, float x, float y, float z, float o, uint32 mapId, uint32 phaseId, uint32 phaseGroup)
+    {
+        GameObjectTemplate const* objectInfo = sObjectMgr->GetGameObjectTemplate(entry);
+        if (!objectInfo)
+        {
+            handler->PSendSysMessage(LANG_GAMEOBJECT_NOT_EXIST, entry);
+            return;
+        }
+
+        handler->PSendSysMessage(LANG_GAMEOBJECT_DETAIL, std::to_string(guidLow).c_str(), objectInfo->name.c_str(),
+            std::to_string(guidLow).c_str(), entry, x, y, z, mapId, o, phaseId, phaseGroup);
+        handler->PSendSysMessage("%s", RoleplayCommandPhaseGuard::FormatPhaseTag(
+            RoleplayCommandPhaseGuard::GetSpawnPhaseId(player, RoleplayPhaseSpawnType::GameObject, guidLow)).c_str());
+        handler->PSendSysMessage("Owner account: %s", ResolveOwnerAccountLabel(guidLow).c_str());
+
+        if (GameObject* target = handler->GetObjectFromPlayerMapByDbGuid(guidLow))
+        {
+            int32 curRespawnDelay = int32(target->GetRespawnTimeEx() - GameTime::GetGameTime());
+            if (curRespawnDelay < 0)
+                curRespawnDelay = 0;
+
+            std::string curRespawnDelayStr = secsToTimeString(curRespawnDelay, TimeFormat::ShortText);
+            std::string defRespawnDelayStr = secsToTimeString(target->GetRespawnDelay(), TimeFormat::ShortText);
+            handler->PSendSysMessage(LANG_COMMAND_RAWPAWNTIMES, defRespawnDelayStr.c_str(), curRespawnDelayStr.c_str());
+        }
+    }
+
+    static bool CheckGameObjectMutation(ChatHandler* handler, ObjectGuid::LowType spawnId, std::string_view auditAction,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases = {})
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("Команда доступна только в игре.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        bool const requestedBypass = allPhases.has_value();
+        bool const bypass =
+            RoleplayCommandPhaseGuard::ValidateAllPhasesBypass(player, handler, requestedBypass, auditAction);
+        if (requestedBypass && !bypass)
+            return false;
+        return RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(player, handler, RoleplayPhaseSpawnType::GameObject,
+            spawnId, bypass, auditAction);
+    }
+
+    // Defined before GetCommands(): clang needs the name visible when binding the command table.
+    static bool HandleGameObjectCheckCommand(ChatHandler* handler, GameObjectSpawnId spawnId)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("Команда доступна только в игре.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        ObjectGuid::LowType const guidLow = *spawnId;
+        if (!AllowsGameObjectListContext(player, guidLow))
+            return RoleplayCommandPhaseGuard::DenyCrossPhase(handler,
+                RoleplayCommandPhaseGuard::Resolve(player, RoleplayPhaseSpawnType::GameObject, guidLow),
+                "Информация по spawn другой phase недоступна.");
+
+        GameObjectData const* data = sObjectMgr->GetGameObjectData(guidLow);
+        if (!data)
+        {
+            handler->PSendSysMessage(LANG_COMMAND_OBJNOTFOUND, std::to_string(guidLow).c_str());
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        PrintGameObjectSpawnDetail(handler, player, guidLow, data->id,
+            data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY(), data->spawnPoint.GetPositionZ(),
+            data->spawnPoint.GetOrientation(), data->mapId, data->phaseId, data->phaseGroup);
+        return true;
+    }
+
 public:
     gobject_commandscript() : CommandScript("gobject_commandscript") { }
 
@@ -68,6 +213,8 @@ public:
             { "info",           HandleGameObjectInfoCommand,      rbac::RBAC_PERM_COMMAND_GOBJECT_INFO,           Console::No },
             { "move",           HandleGameObjectMoveCommand,      rbac::RBAC_PERM_COMMAND_GOBJECT_MOVE,           Console::No },
             { "near",           HandleGameObjectNearCommand,      rbac::RBAC_PERM_COMMAND_GOBJECT_NEAR,           Console::No },
+            { "list",           HandleGameObjectListCommand,      LANG_COMMAND_GOBJECT_LIST_HELP,                rbac::RBAC_PERM_COMMAND_GOBJECT_NEAR,           Console::No },
+            { "check",          HandleGameObjectCheckCommand,     LANG_COMMAND_GOBJECT_CHECK_HELP,               rbac::RBAC_PERM_COMMAND_GOBJECT_TARGET,         Console::No },
             { "target",         HandleGameObjectTargetCommand,    rbac::RBAC_PERM_COMMAND_GOBJECT_TARGET,         Console::No },
             { "turn",           HandleGameObjectTurnCommand,      rbac::RBAC_PERM_COMMAND_GOBJECT_TURN,           Console::No },
             { "spawngroup",     HandleNpcSpawnGroup,              rbac::RBAC_PERM_COMMAND_GOBJECT_SPAWNGROUP,     Console::No },
@@ -86,8 +233,12 @@ public:
         return commandTable;
     }
 
-    static bool HandleGameObjectActivateCommand(ChatHandler* handler, GameObjectSpawnId guidLow)
+    static bool HandleGameObjectActivateCommand(ChatHandler* handler, GameObjectSpawnId guidLow,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
+        if (!CheckGameObjectMutation(handler, *guidLow, "gobject_activate", allPhases))
+            return false;
+
         GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(guidLow);
         if (!object)
         {
@@ -110,6 +261,31 @@ public:
     //spawn go
     static bool HandleGameObjectAddCommand(ChatHandler* handler, GameObjectEntry objectId, Optional<int32> spawnTimeSecs)
     {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("Команда доступна только в игре.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        uint64 const activePhaseId = sRoleplayPhaseMgr.GetPlayerPhaseId(player->GetGUID().GetCounter(), player->GetMapId());
+        bool const staffAccess = player->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_RP_PHASE_ALL_PHASES);
+        bool const serverStaff = sRoleplayPhaseMgr.CanMutateCommonWorld(player->GetSession()->GetSecurity());
+        if (!activePhaseId && !serverStaff)
+        {
+            handler->SendSysMessage("Создание постоянных объектов в общем мире доступно только GM1+.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+        if (activePhaseId && !sRoleplayPhaseMgr.CanEdit(activePhaseId, player->GetGUID().GetCounter(),
+            player->GetSession()->GetAccountId(), staffAccess, serverStaff))
+        {
+            handler->SendSysMessage("Создание объектов в RP phase требует роль editor, manager или owner.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
         if (!objectId)
             return false;
 
@@ -130,7 +306,6 @@ public:
             return false;
         }
 
-        Player* player = handler->GetSession()->GetPlayer();
         Map* map = player->GetMap();
 
         GameObject* object = GameObject::CreateGameObject(objectInfo->entry, map, *player, QuaternionData::fromEulerAnglesZYX(player->GetOrientation(), 0.0f, 0.0f), 255, GO_STATE_READY);
@@ -145,6 +320,18 @@ public:
         // fill the gameobject data and save to the db
         object->SaveToDB(map->GetId(), { map->GetDifficultyID() });
         ObjectGuid::LowType spawnId = object->GetSpawnId();
+        uint64 const phaseId = activePhaseId;
+        if (phaseId && !sRoleplayPhaseMgr.AssignPersistentSpawn(RoleplayPhaseSpawnType::GameObject, spawnId, map->GetId(), phaseId))
+        {
+            delete object;
+            GameObject::DeleteFromDB(spawnId);
+            handler->SendSysMessage("Failed to assign the game object to the active RP phase.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+        sRoleplayPhaseMgr.WriteAudit(player->GetGUID().GetCounter(), player->GetSession()->GetAccountId(),
+            "gobject_add_spawn", phaseId, fmt::format(R"({{"spawn_id":{},"common_world":{}}})",
+                spawnId, phaseId ? "false" : "true"));
 
         // delete the old object and do a clean load from DB with a fresh new GameObject instance.
         // this is required to avoid weird behavior and memory leaks
@@ -159,8 +346,151 @@ public:
         sObjectMgr->AddGameobjectToGrid(ASSERT_NOTNULL(sObjectMgr->GetGameObjectData(spawnId)));
 
         player->SetLastTargetedGO(spawnId);
+        player->SetLastTargetedGO2(spawnId);
+
+        if (RoleplayDatabasePreparedStatement* extraStmt = RoleplayDatabase.GetPreparedStatement(Roleplay_REP_GAMEOBJECTEXTRA))
+        {
+            extraStmt->setUInt64(0, spawnId);
+            extraStmt->setUInt32(1, player->GetSession()->GetBattlenetAccountId());
+            extraStmt->setUInt64(2, player->GetGUID().GetCounter());
+            RoleplayDatabase.Execute(extraStmt);
+        }
 
         handler->PSendSysMessage(LANG_GAMEOBJECT_ADD, *objectId, objectInfo->name.c_str(), std::to_string(spawnId).c_str(), player->GetPositionX(), player->GetPositionY(), player->GetPositionZ());
+        return true;
+    }
+
+    // .gobject list <my|player> [phaseId|all]
+    // Lists persistent GOs placed by a Battle.net account (gameobject_extra). Phase omitted = current RP phase.
+    // GO without creator history are not listed. Older spawns need a new .gobject add to gain tracking.
+    static bool HandleGameObjectListCommand(ChatHandler* handler,
+        Variant<EXACT_SEQUENCE("my"), PlayerIdentifier> who,
+        Optional<Variant<EXACT_SEQUENCE("all"), uint64>> phaseArg)
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("Команда доступна только в игре.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        uint32 bnetAccountId = 0;
+        uint32 gameAccountId = 0;
+        if (who.holds_alternative<EXACT_SEQUENCE("my")>())
+        {
+            bnetAccountId = player->GetSession()->GetBattlenetAccountId();
+            gameAccountId = player->GetSession()->GetAccountId();
+        }
+        else
+        {
+            PlayerIdentifier const& target = who.get<PlayerIdentifier>();
+            if (target.GetGUID().IsEmpty())
+            {
+                handler->SendSysMessage("Персонаж не найден.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            gameAccountId = sCharacterCache->GetCharacterAccountIdByGuid(target.GetGUID());
+            if (!gameAccountId)
+            {
+                handler->SendSysMessage("Аккаунт персонажа не найден.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+
+            bnetAccountId = Battlenet::AccountMgr::GetIdByGameAccount(gameAccountId);
+            if (!bnetAccountId)
+            {
+                handler->SendSysMessage("Battle.net аккаунт персонажа не найден.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
+        }
+
+        std::string accountLabel;
+        if (!AccountMgr::GetName(gameAccountId, accountLabel) || accountLabel.empty())
+            accountLabel = fmt::format("#{}", gameAccountId);
+
+        bool const allPhases = phaseArg && phaseArg->holds_alternative<EXACT_SEQUENCE("all")>();
+        uint64 filterPhaseId = 0;
+        if (!allPhases)
+        {
+            if (phaseArg && phaseArg->holds_alternative<uint64>())
+                filterPhaseId = phaseArg->get<uint64>();
+            else
+                filterPhaseId = sRoleplayPhaseMgr.GetPlayerPhaseId(player->GetGUID().GetCounter(), player->GetMapId());
+        }
+
+        bool const staffAccess = player->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_RP_PHASE_ALL_PHASES);
+        bool const listingOwnAccount = bnetAccountId && bnetAccountId == player->GetSession()->GetBattlenetAccountId();
+        if (!listingOwnAccount && !staffAccess)
+        {
+            handler->SendSysMessage("Список чужих GO требует staff phase access (RBAC 3045).");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        if (!allPhases && filterPhaseId
+            && !listingOwnAccount
+            && !sRoleplayPhaseMgr.CanDiscover(filterPhaseId, player->GetGUID().GetCounter(),
+                player->GetSession()->GetAccountId(), staffAccess))
+        {
+            handler->SendSysMessage("RP phase недоступна для просмотра.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        if (!bnetAccountId)
+        {
+            handler->PSendSysMessage("GO account=%s: 0 (нет Battle.net аккаунта).", accountLabel.c_str());
+            return true;
+        }
+
+        RoleplayDatabasePreparedStatement* stmt = RoleplayDatabase.GetPreparedStatement(Roleplay_SEL_GAMEOBJECTEXTRA_BY_BNET);
+        stmt->setUInt32(0, bnetAccountId);
+        PreparedQueryResult result = RoleplayDatabase.Query(stmt);
+        if (!result)
+        {
+            handler->PSendSysMessage("GO account=%s: 0 (нет gameobject_extra; старые объекты без tracking).",
+                accountLabel.c_str());
+            return true;
+        }
+
+        if (allPhases)
+            handler->PSendSysMessage("GO account=%s phase=all:", accountLabel.c_str());
+        else
+            handler->PSendSysMessage("GO account=%s phase=%llu:", accountLabel.c_str(),
+                static_cast<unsigned long long>(filterPhaseId));
+
+        uint32 shown = 0;
+        do
+        {
+            ObjectGuid::LowType const spawnId = result->Fetch()[0].GetUInt64();
+            GameObjectData const* data = sObjectMgr->GetGameObjectData(spawnId);
+            if (!data)
+                continue;
+
+            uint64 const spawnPhase = sRoleplayPhaseMgr.GetSpawnPhaseId(RoleplayPhaseSpawnType::GameObject, spawnId);
+            if (!allPhases && spawnPhase != filterPhaseId)
+                continue;
+
+            GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(data->id);
+            char const* name = goInfo ? goInfo->name.c_str() : "<unknown>";
+            std::string const phaseTag = RoleplayCommandPhaseGuard::FormatPhaseTag(spawnPhase);
+            handler->PSendSysMessage(LANG_GO_LIST_CHAT, std::to_string(spawnId).c_str(), data->id,
+                std::to_string(spawnId).c_str(), name,
+                data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY(), data->spawnPoint.GetPositionZ(),
+                data->mapId, "", phaseTag.c_str());
+            ++shown;
+        } while (result->NextRow());
+
+        if (allPhases)
+            handler->PSendSysMessage("GO account=%s phase=all: %u.", accountLabel.c_str(), shown);
+        else
+            handler->PSendSysMessage("GO account=%s phase=%llu: %u.", accountLabel.c_str(),
+                static_cast<unsigned long long>(filterPhaseId), shown);
         return true;
     }
 
@@ -196,7 +526,8 @@ public:
         {
             if (objectId->holds_alternative<GameObjectEntry>())
             {
-                result = WorldDatabase.PQuery("SELECT guid, id, position_x, position_y, position_z, orientation, map, PhaseId, PhaseGroup, (POW(position_x - '{}', 2) + POW(position_y - '{}', 2) + POW(position_z - '{}', 2)) AS order_ FROM gameobject WHERE map = '{}' AND id = '{}' ORDER BY order_ ASC LIMIT 1",
+                // LIMIT > 1 so current-phase filtering can skip foreign RP contexts.
+                result = WorldDatabase.PQuery("SELECT guid, id, position_x, position_y, position_z, orientation, map, PhaseId, PhaseGroup, (POW(position_x - '{}', 2) + POW(position_y - '{}', 2) + POW(position_z - '{}', 2)) AS order_ FROM gameobject WHERE map = '{}' AND id = '{}' ORDER BY order_ ASC LIMIT 25",
                     player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(), static_cast<uint32>(objectId->get<GameObjectEntry>()));
             }
             else
@@ -205,7 +536,7 @@ public:
                 WorldDatabase.EscapeString(name);
                 result = WorldDatabase.PQuery(
                     "SELECT guid, id, position_x, position_y, position_z, orientation, map, PhaseId, PhaseGroup, (POW(position_x - {}, 2) + POW(position_y - {}, 2) + POW(position_z - {}, 2)) AS order_ "
-                    "FROM gameobject LEFT JOIN gameobject_template ON gameobject_template.entry = gameobject.id WHERE map = {} AND name LIKE '%{}%' ORDER BY order_ ASC LIMIT 1",
+                    "FROM gameobject LEFT JOIN gameobject_template ON gameobject_template.entry = gameobject.id WHERE map = {} AND name LIKE '%{}%' ORDER BY order_ ASC LIMIT 25",
                     player->GetPositionX(), player->GetPositionY(), player->GetPositionZ(), player->GetMapId(), name);
             }
         }
@@ -264,47 +595,39 @@ public:
             phaseId =       fields[7].GetUInt32();
             phaseGroup =    fields[8].GetUInt32();
             poolId =  sPoolMgr->IsPartOfAPool<GameObject>(guidLow);
+            if (!AllowsGameObjectListContext(player, guidLow))
+                continue;
+
             if (!poolId || sPoolMgr->IsSpawnedObject<GameObject>(player->GetMap()->GetPoolData(), guidLow))
                 found = true;
         } while (result->NextRow() && !found);
 
         if (!found)
         {
-            handler->PSendSysMessage(LANG_GAMEOBJECT_NOT_EXIST, id);
-            return false;
+            handler->SendSysMessage(LANG_COMMAND_TARGETOBJNOTFOUND);
+            return true;
         }
 
-        GameObjectTemplate const* objectInfo = sObjectMgr->GetGameObjectTemplate(id);
-
-        if (!objectInfo)
+        if (!sObjectMgr->GetGameObjectTemplate(id))
         {
             handler->PSendSysMessage(LANG_GAMEOBJECT_NOT_EXIST, id);
             return false;
         }
-
-        GameObject* target = handler->GetObjectFromPlayerMapByDbGuid(guidLow);
 
         player->SetLastTargetedGO(guidLow);
+        player->SetLastTargetedGO2(guidLow);
 
-        handler->PSendSysMessage(LANG_GAMEOBJECT_DETAIL, std::to_string(guidLow).c_str(), objectInfo->name.c_str(), std::to_string(guidLow).c_str(), id, x, y, z, mapId, o, phaseId, phaseGroup);
-
-        if (target)
-        {
-            int32 curRespawnDelay = int32(target->GetRespawnTimeEx() - GameTime::GetGameTime());
-            if (curRespawnDelay < 0)
-                curRespawnDelay = 0;
-
-            std::string curRespawnDelayStr = secsToTimeString(curRespawnDelay, TimeFormat::ShortText);
-            std::string defRespawnDelayStr = secsToTimeString(target->GetRespawnDelay(), TimeFormat::ShortText);
-
-            handler->PSendSysMessage(LANG_COMMAND_RAWPAWNTIMES, defRespawnDelayStr.c_str(), curRespawnDelayStr.c_str());
-        }
+        PrintGameObjectSpawnDetail(handler, player, guidLow, id, x, y, z, o, mapId, phaseId, phaseGroup);
         return true;
     }
 
     //delete object by selection or guid
-    static bool HandleGameObjectDeleteCommand(ChatHandler* handler, GameObjectSpawnId spawnId)
+    static bool HandleGameObjectDeleteCommand(ChatHandler* handler, GameObjectSpawnId spawnId,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
+        if (!CheckGameObjectMutation(handler, *spawnId, "gobject_delete", allPhases))
+            return false;
+
         std::string deleteError;
         if (!NobleNext_CanGameObjectBeDeleted(*spawnId, deleteError))
         {
@@ -345,9 +668,13 @@ public:
     }
 
     //turn selected object
-    static bool HandleGameObjectTurnCommand(ChatHandler* handler, GameObjectSpawnId guidLow, Optional<float> oz, Optional<float> oy, Optional<float> ox)
+    static bool HandleGameObjectTurnCommand(ChatHandler* handler, GameObjectSpawnId guidLow, Optional<float> oz,
+        Optional<float> oy, Optional<float> ox, Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
         if (!guidLow)
+            return false;
+
+        if (!CheckGameObjectMutation(handler, *guidLow, "gobject_turn", allPhases))
             return false;
 
         GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(guidLow);
@@ -387,9 +714,13 @@ public:
     }
 
     //move selected object
-    static bool HandleGameObjectMoveCommand(ChatHandler* handler, GameObjectSpawnId guidLow, Optional<std::array<float,3>> xyz)
+    static bool HandleGameObjectMoveCommand(ChatHandler* handler, GameObjectSpawnId guidLow, Optional<std::array<float,3>> xyz,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
         if (!guidLow)
+            return false;
+
+        if (!CheckGameObjectMutation(handler, *guidLow, "gobject_move", allPhases))
             return false;
 
         GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(guidLow);
@@ -443,9 +774,13 @@ public:
     }
 
     //set phasemask for selected object
-    static bool HandleGameObjectSetPhaseCommand(ChatHandler* handler, GameObjectSpawnId guidLow, uint32 phaseId)
+    static bool HandleGameObjectSetPhaseCommand(ChatHandler* handler, GameObjectSpawnId guidLow, uint32 phaseId,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
         if (!guidLow)
+            return false;
+
+        if (!CheckGameObjectMutation(handler, *guidLow, "gobject_set_phase", allPhases))
             return false;
 
         GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(guidLow);
@@ -503,7 +838,13 @@ public:
                 if (!gameObjectInfo)
                     continue;
 
-                handler->PSendSysMessage(LANG_GO_LIST_CHAT, std::to_string(guid).c_str(), entry, std::to_string(guid).c_str(), gameObjectInfo->name.c_str(), x, y, z, mapId, "", "");
+                if (!AllowsGameObjectListContext(player, guid))
+                    continue;
+
+                std::string const phaseTag = RoleplayCommandPhaseGuard::FormatPhaseTag(
+                    RoleplayCommandPhaseGuard::GetSpawnPhaseId(player, RoleplayPhaseSpawnType::GameObject, guid));
+
+                handler->PSendSysMessage(LANG_GO_LIST_CHAT, std::to_string(guid).c_str(), entry, std::to_string(guid).c_str(), gameObjectInfo->name.c_str(), x, y, z, mapId, "", phaseTag.c_str());
 
                 ++count;
             } while (result->NextRow());
@@ -529,6 +870,15 @@ public:
         if (isGuid || data.holds_alternative<Hyperlink<gameobject>>())
         {
             spawnId = *data;
+            Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+            if (player && !AllowsGameObjectListContext(player, spawnId))
+            {
+                RoleplayCommandPhaseGuard::DenyCrossPhase(handler,
+                    RoleplayCommandPhaseGuard::Resolve(player, RoleplayPhaseSpawnType::GameObject, spawnId),
+                    "Информация по spawn другой phase недоступна.");
+                return false;
+            }
+
             spawnData = sObjectMgr->GetGameObjectData(spawnId);
             if (!spawnData)
             {
@@ -584,6 +934,11 @@ public:
             spawnData->rotation.toEulerAnglesZYX(yaw, pitch, roll);
             handler->PSendSysMessage(LANG_SPAWNINFO_SPAWNID_LOCATION, std::to_string(spawnData->spawnId).c_str(), spawnData->spawnPoint.GetPositionX(), spawnData->spawnPoint.GetPositionY(), spawnData->spawnPoint.GetPositionZ());
             handler->PSendSysMessage(LANG_SPAWNINFO_ROTATION, yaw, pitch, roll);
+            if (Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr)
+            {
+                handler->PSendSysMessage("%s", RoleplayCommandPhaseGuard::FormatPhaseTag(
+                    RoleplayCommandPhaseGuard::GetSpawnPhaseId(player, RoleplayPhaseSpawnType::GameObject, spawnId)).c_str());
+            }
         }
 
         handler->PSendSysMessage(LANG_GOINFO_ENTRY, entry);
@@ -602,9 +957,13 @@ public:
         return true;
     }
 
-    static bool HandleGameObjectSetStateCommand(ChatHandler* handler, GameObjectSpawnId guidLow, int32 objectType, Optional<uint32> objectState)
+    static bool HandleGameObjectSetStateCommand(ChatHandler* handler, GameObjectSpawnId guidLow, int32 objectType,
+        Optional<uint32> objectState, Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
         if (!guidLow)
+            return false;
+
+        if (!CheckGameObjectMutation(handler, *guidLow, "gobject_set_state", allPhases))
             return false;
 
         GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(guidLow);
@@ -708,6 +1067,9 @@ public:
             return false;
         }
 
+        if (!CheckGameObjectMutation(handler, guidLow, "gobject_visibility"))
+            return false;
+
         GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(guidLow);
         if (!object)
         {
@@ -752,9 +1114,13 @@ public:
         return true;
     }
 
-    static bool HandleGameObjectSetScaleCommand(ChatHandler* handler, GameObjectSpawnId guidLow, float scale)
+    static bool HandleGameObjectSetScaleCommand(ChatHandler* handler, GameObjectSpawnId guidLow, float scale,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
         if (!guidLow)
+            return false;
+
+        if (!CheckGameObjectMutation(handler, *guidLow, "gobject_set_scale", allPhases))
             return false;
 
         GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(guidLow);

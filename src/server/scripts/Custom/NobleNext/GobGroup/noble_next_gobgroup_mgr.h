@@ -29,6 +29,7 @@ namespace RoleplayCore::NobleNext
         ObjectGuid::LowType Guid = 0;
         uint32 Entry = 0;
         uint32 MapId = 0;
+        uint64 LogicalPhaseId = 0;
         float X = 0.f;
         float Y = 0.f;
         float Z = 0.f;
@@ -55,6 +56,7 @@ namespace RoleplayCore::NobleNext
         std::string Name;
         uint32 MemberCount = 0;
         uint32 MapId = 0;
+        uint64 LogicalPhaseId = 0;
     };
 
     struct GobGroupListSnapshot
@@ -69,6 +71,7 @@ namespace RoleplayCore::NobleNext
         std::string Name;
         uint32 MemberCount = 0;
         uint32 MapId = 0;
+        uint64 LogicalPhaseId = 0;
         float Distance = 0.f;
         float X = 0.f;
         float Y = 0.f;
@@ -104,6 +107,9 @@ namespace RoleplayCore::NobleNext
         bool IsRoot(ObjectGuid::LowType guid) const;
         bool IsMember(ObjectGuid::LowType guid) const;
         bool IsBusy(ObjectGuid::LowType anyGuid) const;
+        // Returns root + members for an existing group. Used by logical phase
+        // assignment to keep a spatial group in one context atomically.
+        bool TryGetGroupSpawnIds(ObjectGuid::LowType anyGuid, std::vector<uint64>& outSpawnIds) const;
 
         // active group per account (UI context only; mutations take explicit GUID)
         void SetActiveRoot(uint32 accountId, ObjectGuid::LowType anyGuid);
@@ -118,14 +124,14 @@ namespace RoleplayCore::NobleNext
         bool CleanupOrphans(bool confirm, std::string& report);
 
         // info accepts any existing GO; grouped roots/members include canonical group details
-        std::string BuildInfo(ObjectGuid::LowType objectGuid) const;
+        std::string BuildInfo(Player const* viewer, ObjectGuid::LowType objectGuid) const;
         std::string BuildCheck(ObjectGuid::LowType anyGuid) const;
         std::string BuildStatus(ObjectGuid::LowType anyGuid) const;
-        std::string BuildList(Optional<uint32> mapId) const;
+        std::string BuildList(Player const* viewer, Optional<uint32> mapId) const;
 
         // structured snapshots for NN_GOBGROUP addon clients
-        bool TryGetInfoSnapshot(ObjectGuid::LowType objectGuid, GobGroupInfoSnapshot& out, std::string& error) const;
-        void GetListSnapshot(Optional<uint32> mapId, GobGroupListSnapshot& out) const;
+        bool TryGetInfoSnapshot(Player const* viewer, ObjectGuid::LowType objectGuid, GobGroupInfoSnapshot& out, std::string& error) const;
+        void GetListSnapshot(Player const* viewer, Optional<uint32> mapId, GobGroupListSnapshot& out) const;
         void GetNearSnapshot(Player const* player, float radius, GobGroupNearSnapshot& out) const;
         bool TryGetStatusSnapshot(ObjectGuid::LowType anyGuid, GobGroupStatusSnapshot& out, std::string& error) const;
         uint32 ScanNear(Player* player, ObjectGuid::LowType groupGuid, float radius,
@@ -145,6 +151,9 @@ namespace RoleplayCore::NobleNext
         // group transforms (async jobs)
         bool Move(ObjectGuid::LowType groupGuid, Position const& newRootPos, std::string& error);
         bool Turn(ObjectGuid::LowType groupGuid, float newOrientation, std::string& error);
+        bool Nudge(ObjectGuid::LowType groupGuid, float dx, float dy, float dz, std::string& error);
+        bool RotateDelta(ObjectGuid::LowType groupGuid, float dYawRad, float dPitchRad, float dRollRad, std::string& error);
+        bool ScaleUniform(ObjectGuid::LowType groupGuid, float factor, std::string& error);
         bool Relocate(ObjectGuid::LowType groupGuid, uint32 mapId, Position const& newRootPos, bool confirm, std::string& error);
 
     private:
@@ -187,6 +196,9 @@ namespace RoleplayCore::NobleNext
             JobPhase Phase = JobPhase::None;
             RuntimeStage Stage = RuntimeStage::Hide;
             GroupTransformPlan Plan;
+            std::vector<std::pair<ObjectGuid::LowType, MemberRelativeTransform>> PendingRelatives;
+            std::vector<std::pair<ObjectGuid::LowType, float>> PendingSizes;
+            bool ClearDirtyOnSuccess = false;
             Optional<TransactionCallback> DbCallback;
             size_t RuntimeIndex = 0;
             uint32 SqlChunks = 0;
@@ -220,6 +232,9 @@ namespace RoleplayCore::NobleNext
 
         static bool IsUnsupportedGo(GameObjectData const* data, std::string& reason);
         static bool IsEventManaged(ObjectGuid::LowType spawnId);
+        static uint64 GetLogicalPhaseId(ObjectGuid::LowType spawnId);
+        static uint64 GetViewerPhaseId(Player const* viewer);
+        static bool IsVisibleInLogicalContext(Player const* viewer, ObjectGuid::LowType spawnId);
         bool ValidateSpawnForGroup(ObjectGuid::LowType spawnId, ObjectGuid::LowType expectedMapRoot,
             bool asRoot, std::string& error) const;
         bool ValidateGroupIntegrity(GroupRecord const& group, std::string& error) const;

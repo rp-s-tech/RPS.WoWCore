@@ -1333,6 +1333,33 @@ enum TrinityStrings
     LANG_COMMAND_GOBGROUP_MOVE_HELP               = 11119, // move|turn|relocate
     LANG_COMMAND_GOBGROUP_CLEANUP_HELP            = 11120,
 
+    // NobleNext RP phase command help (trinity_string 11130-11148)
+    LANG_COMMAND_RP_PHASE_HELP                    = 11130,
+    LANG_COMMAND_RP_PHASE_CREATE_HELP             = 11131,
+    LANG_COMMAND_RP_PHASE_LIST_HELP               = 11132,
+    LANG_COMMAND_RP_PHASE_INFO_HELP               = 11133,
+    LANG_COMMAND_RP_PHASE_ENTER_HELP              = 11134,
+    LANG_COMMAND_RP_PHASE_LEAVE_HELP              = 11135,
+    LANG_COMMAND_RP_PHASE_INVITE_HELP             = 11136,
+    LANG_COMMAND_RP_PHASE_REVOKE_HELP             = 11137,
+    LANG_COMMAND_RP_PHASE_ARCHIVE_HELP            = 11138,
+    LANG_COMMAND_RP_PHASE_UNARCHIVE_HELP          = 11149,
+    LANG_COMMAND_RP_PHASE_RELOAD_HELP             = 11139,
+    LANG_COMMAND_RP_PHASE_SPAWN_HELP              = 11140,
+    LANG_COMMAND_RP_PHASE_SET_HELP                = 11141,
+    LANG_COMMAND_RP_PHASE_SET_PUBLIC_HELP         = 11142,
+    LANG_COMMAND_RP_PHASE_SET_OWNER_HELP          = 11143,
+    LANG_COMMAND_RP_PHASE_SET_ROLE_HELP           = 11144,
+    LANG_COMMAND_RP_PHASE_SET_SPAWN_HELP          = 11145,
+    LANG_COMMAND_RP_PHASE_SET_ENTER_SPAWN_HELP    = 11146,
+    LANG_COMMAND_RP_PHASE_SET_NAME_HELP           = 11150,
+    LANG_COMMAND_RP_PHASE_GOTO_HELP               = 11147,
+    LANG_COMMAND_LOOKUP_RP_PHASE_HELP             = 11148,
+
+    // .gobject list / check help
+    LANG_COMMAND_GOBJECT_LIST_HELP                = 11151,
+    LANG_COMMAND_GOBJECT_CHECK_HELP               = 11152,
+
     LANG_RANDOM_MESSAGE                           = 65002, // %s
     LANG_WP_MOVE_1                                = 65003, // WP MOVE DONE 1 WALK
     LANG_WP_MOVE_2                                = 65004, // WP MOVE DONE 2 RUN

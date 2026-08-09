@@ -113,7 +113,7 @@ public:
 
         static ChatCommandTable customNpcCommandTable =
         {
-            { "",          HandleCustomNpcHelpCommand,             LANG_COMMAND_CUSTOMNPC_HELP,        rbac::RBAC_PERM_COMMAND_CUSTOMNPC_CREATE, Console::No },
+            // No blank "" invoker: bare `.cnpc` / `.help cnpc` use TC auto-help (USAGE + subcommands).
             { "add",       HandleCustomNpcCreateCommand,           LANG_COMMAND_CUSTOMNPC_ADD_HELP,    rbac::RBAC_PERM_COMMAND_CUSTOMNPC_CREATE, Console::No },
             { "apply",     HandleCustomNpcApplyCommand,            LANG_COMMAND_CUSTOMNPC_APPLY_HELP,  rbac::RBAC_PERM_COMMAND_CUSTOMNPC_SPAWN, Console::No },
             { "clone",     customNpcCloneCommandTable },
@@ -121,7 +121,7 @@ public:
             { "diagnose",  HandleCustomNpcDiagnoseCommand,         LANG_COMMAND_CUSTOMNPC_DIAGNOSE_HELP, rbac::RBAC_PERM_COMMAND_CUSTOMNPC_CREATE, Console::No },
             { "equip",     customNpcEquipCommandTable },
             { "face",      customNpcFaceCommandTable },
-            { "help",      HandleCustomNpcHelpCommand,             LANG_COMMAND_CUSTOMNPC_HELP,        rbac::RBAC_PERM_COMMAND_CUSTOMNPC_CREATE, Console::No },
+            { "help",      HandleCustomNpcHelpCommand,             rbac::RBAC_PERM_COMMAND_CUSTOMNPC_CREATE, Console::No },
             { "import",    HandleCustomNpcImportCommand,           LANG_COMMAND_CUSTOMNPC_IMPORT_HELP, rbac::RBAC_PERM_COMMAND_CUSTOMNPC_CREATE, Console::No },
             { "list",      HandleCustomNpcListCommand,             LANG_COMMAND_CUSTOMNPC_LIST_HELP,   rbac::RBAC_PERM_COMMAND_CUSTOMNPC_CREATE, Console::No },
             { "model",     customNpcModelCommandTable },
@@ -143,7 +143,8 @@ public:
 
     static bool HandleCustomNpcHelpCommand(ChatHandler* handler)
     {
-        handler->SendSysMessage(LANG_COMMAND_CUSTOMNPC_HELP);
+        // Compact TC auto-help (same as bare `.cnpc` / `.help cnpc`); not trinity_string 11060 flood.
+        Trinity::ChatCommands::SendCommandHelpFor(*handler, "cnpc");
         return true;
     }
 

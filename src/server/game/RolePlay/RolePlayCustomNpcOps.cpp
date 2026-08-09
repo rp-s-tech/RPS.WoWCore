@@ -895,7 +895,7 @@ std::string Roleplay::GetCustomizationOptionLabel(ChrCustomizationOptionEntry co
     if (option->Name[DEFAULT_LOCALE] && *option->Name[DEFAULT_LOCALE])
         return option->Name[DEFAULT_LOCALE];
 
-    return Trinity::StringFormat("Option %u", option->ID);
+    return Trinity::StringFormat("Option {}", option->ID);
 }
 
 std::string Roleplay::GetCustomizationChoiceLabel(ChrCustomizationChoiceEntry const* choice, LocaleConstant locale) const
@@ -909,7 +909,7 @@ std::string Roleplay::GetCustomizationChoiceLabel(ChrCustomizationChoiceEntry co
     if (choice->Name[DEFAULT_LOCALE] && *choice->Name[DEFAULT_LOCALE])
         return choice->Name[DEFAULT_LOCALE];
 
-    return Trinity::StringFormat("Choice %u", choice->ID);
+    return Trinity::StringFormat("Choice {}", choice->ID);
 }
 
 bool Roleplay::MeetsCustomizationReqForOutfit(ChrCustomizationReqEntry const* req, CreatureOutfit const& outfit, bool checkRequiredDependentChoices) const

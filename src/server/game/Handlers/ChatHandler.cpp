@@ -36,6 +36,7 @@
 #include "ObjectMgr.h"
 #include "Opcodes.h"
 #include "Player.h"
+#include "RoleplayPhaseMgr.h"
 #include "ScriptMgr.h"
 #include "SpellAuraEffects.h"
 #include "Util.h"
@@ -244,6 +245,8 @@ ChatMessageResult WorldSession::HandleChatMessage(ChatMsg type, Language lang, s
     if (!ValidateHyperlinksAndMaybeKick(msg))
         return ChatMessageResult::MalformedHyperlinks;
 
+    // Social channels are intentionally cross-phase: they do not grant spatial interaction rights.
+    // RP context filtering applies only to proximity delivery below.
     switch (type)
     {
         case CHAT_MSG_SAY:
@@ -617,6 +620,12 @@ void WorldSession::HandleChatAddonMessage(ChatMsg type, std::string prefix, std:
             if (!receiver)
                 break;
 
+            // Registered phase protocols are consumed before normal addon
+            // forwarding, while both the original prefix and self-target are
+            // still authoritative server-side values.
+            if (sRoleplayPhaseMgr.HandleAddonMessage(sender, uint32(type), prefix, text, receiver == sender))
+                break;
+
             sender->WhisperAddon(text, prefix, isLogged, receiver);
             break;
         }
@@ -788,6 +797,10 @@ void WorldSession::HandleTextEmoteOpcode(WorldPackets::Chat::CTextEmote& packet)
         return;
     }
 
+    Unit* unit = ObjectAccessor::GetUnit(*_player, packet.Target);
+    if (unit && !_player->CanSeeInPhaseContexts(unit))
+        return;
+
     sScriptMgr->OnPlayerTextEmote(_player, packet.EmoteID, packet.SoundIndex, packet.Target);
 
     EmotesTextEntry const* em = sEmotesTextStore.LookupEntry(packet.EmoteID);
@@ -823,8 +836,6 @@ void WorldSession::HandleTextEmoteOpcode(WorldPackets::Chat::CTextEmote& packet)
     textEmote.EmoteID = packet.EmoteID;
     textEmote.SoundIndex = packet.SoundIndex;
     _player->SendMessageToSetInRange(textEmote.Write(), sWorld->getFloatConfig(CONFIG_LISTEN_RANGE_TEXTEMOTE), true);
-
-    Unit* unit = ObjectAccessor::GetUnit(*_player, packet.Target);
 
     _player->UpdateCriteria(CriteriaType::DoEmote, packet.EmoteID, 0, 0, unit);
 

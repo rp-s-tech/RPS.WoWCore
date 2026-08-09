@@ -35,6 +35,9 @@ void WorldSession::HandleInspectOpcode(WorldPackets::Inspect::Inspect& inspect)
         return;
     }
 
+    if (!_player->CanSeeInPhaseContexts(player))
+        return;
+
     TC_LOG_DEBUG("network", "WorldSession::HandleInspectOpcode: Target {}.", inspect.Target.ToString());
 
     if (!GetPlayer()->IsWithinDistInMap(player, INSPECT_DISTANCE, false))
@@ -93,6 +96,9 @@ void WorldSession::HandleQueryInspectAchievements(WorldPackets::Inspect::QueryIn
         TC_LOG_DEBUG("network", "WorldSession::HandleQueryInspectAchievements: [{}] inspected unknown Player [{}]", GetPlayer()->GetGUID().ToString(), inspect.Guid.ToString());
         return;
     }
+
+    if (!_player->CanSeeInPhaseContexts(player))
+        return;
 
     TC_LOG_DEBUG("network", "WorldSession::HandleQueryInspectAchievements: [{}] inspected Player [{}]", GetPlayer()->GetGUID().ToString(), inspect.Guid.ToString());
 

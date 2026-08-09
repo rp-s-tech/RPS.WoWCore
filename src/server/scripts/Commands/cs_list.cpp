@@ -37,6 +37,7 @@ EndScriptData */
 #include "PhasingHandler.h"
 #include "Player.h"
 #include "RBAC.h"
+#include "RoleplayCommandPhaseGuard.h"
 #include "SpellAuraEffects.h"
 #include "WorldSession.h"
 
@@ -118,6 +119,14 @@ public:
                 uint16 mapId    = fields[4].GetUInt16();
                 bool liveFound = false;
 
+                if (handler->GetSession())
+                {
+                    Player* player = handler->GetSession()->GetPlayer();
+                    if (!RoleplayCommandPhaseGuard::AllowsViewerSpawnContext(
+                        RoleplayCommandPhaseGuard::Resolve(player, RoleplayPhaseSpawnType::Creature, guid), false))
+                        continue;
+                }
+
                 // Get map (only support base map from console)
                 Map* thisMap = nullptr;
                 if (handler->GetSession())
@@ -126,17 +135,27 @@ public:
                 // If map found, try to find active version of this creature
                 if (thisMap)
                 {
+                    std::string const phaseTag = RoleplayCommandPhaseGuard::FormatPhaseTag(
+                        RoleplayCommandPhaseGuard::GetSpawnPhaseId(handler->GetSession()->GetPlayer(),
+                            RoleplayPhaseSpawnType::Creature, guid));
                     auto const creBounds = Trinity::Containers::MapEqualRange(thisMap->GetCreatureBySpawnIdStore(), guid);
                     for (auto& [spawnId, creature] : creBounds)
                         handler->PSendSysMessage(LANG_CREATURE_LIST_CHAT, std::to_string(guid).c_str(), std::to_string(guid).c_str(), cInfo->Name.c_str(),
                             x, y, z, mapId, creature->GetGUID().ToString().c_str(), creature->IsAlive() ? "*" : " ");
                     liveFound = creBounds.begin() != creBounds.end();
+                    if (liveFound)
+                        handler->PSendSysMessage("%s", phaseTag.c_str());
                 }
 
                 if (!liveFound)
                 {
                     if (handler->GetSession())
-                        handler->PSendSysMessage(LANG_CREATURE_LIST_CHAT, std::to_string(guid).c_str(), std::to_string(guid).c_str(), cInfo->Name.c_str(), x, y, z, mapId, "", "");
+                    {
+                        std::string const phaseTag = RoleplayCommandPhaseGuard::FormatPhaseTag(
+                            RoleplayCommandPhaseGuard::GetSpawnPhaseId(handler->GetSession()->GetPlayer(),
+                                RoleplayPhaseSpawnType::Creature, guid));
+                        handler->PSendSysMessage(LANG_CREATURE_LIST_CHAT, std::to_string(guid).c_str(), std::to_string(guid).c_str(), cInfo->Name.c_str(), x, y, z, mapId, "", phaseTag.c_str());
+                    }
                     else
                         handler->PSendSysMessage(LANG_CREATURE_LIST_CONSOLE, std::to_string(guid).c_str(), cInfo->Name.c_str(), x, y, z, mapId, "", "");
                 }
@@ -387,6 +406,14 @@ public:
                 uint32 entry    = fields[5].GetUInt32();
                 bool liveFound = false;
 
+                if (handler->GetSession())
+                {
+                    Player* player = handler->GetSession()->GetPlayer();
+                    if (!RoleplayCommandPhaseGuard::AllowsViewerSpawnContext(
+                        RoleplayCommandPhaseGuard::Resolve(player, RoleplayPhaseSpawnType::GameObject, guid), false))
+                        continue;
+                }
+
                 // Get map (only support base map from console)
                 Map* thisMap = nullptr;
                 if (handler->GetSession())
@@ -395,17 +422,27 @@ public:
                 // If map found, try to find active version of this object
                 if (thisMap)
                 {
+                    std::string const phaseTag = RoleplayCommandPhaseGuard::FormatPhaseTag(
+                        RoleplayCommandPhaseGuard::GetSpawnPhaseId(handler->GetSession()->GetPlayer(),
+                            RoleplayPhaseSpawnType::GameObject, guid));
                     auto const goBounds = Trinity::Containers::MapEqualRange(thisMap->GetGameObjectBySpawnIdStore(), guid);
                     for (auto& [spawnId, go] : goBounds)
                         handler->PSendSysMessage(LANG_GO_LIST_CHAT, std::to_string(guid).c_str(), entry, std::to_string(guid).c_str(), gInfo->name.c_str(), x, y, z, mapId,
                             go->GetGUID().ToString().c_str(), go->isSpawned() ? "*" : " ");
                     liveFound = goBounds.begin() != goBounds.end();
+                    if (liveFound)
+                        handler->PSendSysMessage("%s", phaseTag.c_str());
                 }
 
                 if (!liveFound)
                 {
                     if (handler->GetSession())
-                        handler->PSendSysMessage(LANG_GO_LIST_CHAT, std::to_string(guid).c_str(), entry, std::to_string(guid).c_str(), gInfo->name.c_str(), x, y, z, mapId, "", "");
+                    {
+                        std::string const phaseTag = RoleplayCommandPhaseGuard::FormatPhaseTag(
+                            RoleplayCommandPhaseGuard::GetSpawnPhaseId(handler->GetSession()->GetPlayer(),
+                                RoleplayPhaseSpawnType::GameObject, guid));
+                        handler->PSendSysMessage(LANG_GO_LIST_CHAT, std::to_string(guid).c_str(), entry, std::to_string(guid).c_str(), gInfo->name.c_str(), x, y, z, mapId, "", phaseTag.c_str());
+                    }
                     else
                         handler->PSendSysMessage(LANG_GO_LIST_CONSOLE, std::to_string(guid).c_str(), gInfo->name.c_str(), x, y, z, mapId, "", "");
                 }

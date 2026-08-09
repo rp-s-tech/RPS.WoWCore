@@ -47,6 +47,7 @@
 #include "Player.h"
 #include "PoolMgr.h"
 #include "RolePlay.h"
+#include "RoleplayPhaseMgr.h"
 #include "QueryPackets.h"
 #include "ScriptedGossip.h"
 #include "Spell.h"
@@ -2223,6 +2224,7 @@ bool Creature::hasInvolvedQuest(uint32 quest_id) const
     RoleplayDatabase.Execute(fstmt);
 
     WorldDatabase.CommitTransaction(trans);
+    sRoleplayPhaseMgr.ClearPersistentSpawn(RoleplayPhaseSpawnType::Creature, spawnId);
 
     return true;
 }

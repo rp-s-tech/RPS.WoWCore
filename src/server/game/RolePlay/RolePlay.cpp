@@ -18,6 +18,7 @@
 #include "Log.h"
 
 #include "RolePlay.h"
+#include "RoleplayPhaseMgr.h"
 #include "DB2Stores.h"
 #include "TransmogMgr.h"
 #include <boost/algorithm/string.hpp>
@@ -53,6 +54,7 @@ Roleplay* Roleplay::instance()
 void Roleplay::LoadAllTables()
 {
     uint32 oldMSTime = getMSTime();
+    sRoleplayPhaseMgr.Load();
     LoadCreatureExtras();
     LoadCreatureTemplateExtras();
     LoadCustomNpcs();

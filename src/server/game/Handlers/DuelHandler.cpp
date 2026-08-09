@@ -30,7 +30,7 @@ void WorldSession::HandleCanDuel(WorldPackets::Duel::CanDuel& packet)
 {
     Player* player = ObjectAccessor::FindPlayer(packet.TargetGUID);
 
-    if (!player)
+    if (!player || !_player->CanSeeInPhaseContexts(player))
         return;
 
     WorldPackets::Duel::CanDuelResult response;

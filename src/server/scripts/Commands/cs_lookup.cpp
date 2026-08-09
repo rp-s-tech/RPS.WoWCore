@@ -29,14 +29,18 @@ EndScriptData */
 #include "DatabaseEnv.h"
 #include "DB2Stores.h"
 #include "GameEventMgr.h"
+#include "Language.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "RBAC.h"
 #include "ReputationMgr.h"
+#include "RoleplayPhaseMgr.h"
 #include "SpellInfo.h"
 #include "SpellMgr.h"
 #include "Util.h"
 #include "World.h"
 #include "WorldSession.h"
+#include <algorithm>
 #include <sstream>
 #include <vector>
 
@@ -59,6 +63,11 @@ public:
             { "account", rbac::RBAC_PERM_COMMAND_LOOKUP_PLAYER_ACCOUNT, true, &HandleLookupPlayerAccountCommand,   "" },
             { "email",   rbac::RBAC_PERM_COMMAND_LOOKUP_PLAYER_EMAIL,   true, &HandleLookupPlayerEmailCommand,     "" },
         };
+        static ChatCommandTable lookupRpTable =
+        {
+            { "phase", HandleLookupRpPhaseCommand, LANG_COMMAND_LOOKUP_RP_PHASE_HELP,
+                rbac::RBAC_PERM_COMMAND_LOOKUP_RP_PHASE, Console::No },
+        };
 
         static ChatCommandTable lookupCommandTable =
         {
@@ -74,6 +83,7 @@ public:
             { "quest",    rbac::RBAC_PERM_COMMAND_LOOKUP_QUEST,    true, &HandleLookupQuestCommand,    "" },
             { "quest id", rbac::RBAC_PERM_COMMAND_LOOKUP_QUEST_ID, true, &HandleLookupQuestIdCommand,  "" },
             { "player",   lookupPlayerCommandTable },
+            { "rp",       lookupRpTable },
             { "skill",    rbac::RBAC_PERM_COMMAND_LOOKUP_SKILL,    true, &HandleLookupSkillCommand,    "" },
             { "spell",    rbac::RBAC_PERM_COMMAND_LOOKUP_SPELL,    true, &HandleLookupSpellCommand,    "" },
             { "spell id", rbac::RBAC_PERM_COMMAND_LOOKUP_SPELL_ID, true, &HandleLookupSpellIdCommand,  "" },
@@ -89,6 +99,91 @@ public:
             { "lookup", lookupCommandTable },
         };
         return commandTable;
+    }
+
+    static bool HandleLookupRpPhaseCommand(ChatHandler* handler, char const* args)
+    {
+        Player* player = handler ? handler->GetPlayer() : nullptr;
+        if (!player)
+        {
+            if (handler)
+            {
+                handler->SendSysMessage("Команда доступна только в игре.");
+                handler->SetSentErrorMessage(true);
+            }
+            return false;
+        }
+
+        std::string query = args ? args : "";
+        std::wstring queryWide;
+        if (!query.empty() && (!Utf8toWStr(query, queryWide)))
+            return false;
+        wstrToLower(queryWide);
+
+        uint64 const characterGuid = player->GetGUID().GetCounter();
+        uint32 const accountId = player->GetSession()->GetAccountId();
+        bool const staffAccess = player->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_RP_PHASE_ALL_PHASES);
+
+        std::vector<RoleplayPhaseInfo> phases;
+        sRoleplayPhaseMgr.GetPhaseList(phases);
+        uint32 const maxResults = sWorld->getIntConfig(CONFIG_MAX_RESULTS_LOOKUP_COMMANDS);
+        uint32 count = 0;
+        bool found = false;
+
+        auto Matches = [&queryWide](std::string const& value)
+        {
+            if (queryWide.empty())
+                return true;
+            return Utf8FitTo(value, queryWide);
+        };
+        auto RoleName = [](RoleplayPhaseRole role)
+        {
+            switch (role)
+            {
+                case RoleplayPhaseRole::Viewer: return "viewer";
+                case RoleplayPhaseRole::Editor: return "editor";
+                case RoleplayPhaseRole::Manager: return "manager";
+                case RoleplayPhaseRole::Owner: return "owner";
+                default: return "none";
+            }
+        };
+
+        std::sort(phases.begin(), phases.end(), [](RoleplayPhaseInfo const& left, RoleplayPhaseInfo const& right)
+        {
+            return left.Id < right.Id;
+        });
+        for (RoleplayPhaseInfo const& phase : phases)
+        {
+            if (!sRoleplayPhaseMgr.CanDiscover(phase.Id, characterGuid, accountId, staffAccess))
+                continue;
+
+            std::string owner = "Server";
+            if (phase.OwnerAccountId)
+            {
+                AccountMgr::GetName(phase.OwnerAccountId, owner);
+                if (owner.empty())
+                    owner = "Unknown";
+            }
+            if (!Matches(std::to_string(phase.Id)) && !Matches(phase.Name) && !Matches(phase.Description) && !Matches(owner))
+                continue;
+
+            if (maxResults && count++ == maxResults)
+            {
+                handler->PSendSysMessage(LANG_COMMAND_LOOKUP_MAX_RESULTS, maxResults);
+                return true;
+            }
+
+            RoleplayPhaseRole const role = sRoleplayPhaseMgr.GetMemberRole(phase.Id, characterGuid, accountId);
+            handler->SendSysMessage(Trinity::StringFormat("[{}] {} | {} | {} | owner {} | role {} | spawn {}",
+                phase.Id, phase.Name, phase.IsPublic ? "public" : "private",
+                phase.MapId ? Trinity::StringFormat("scope map {}", *phase.MapId) : "scope global",
+                owner, RoleName(role), phase.HasSpawn() ? "yes" : "no").c_str());
+            found = true;
+        }
+
+        if (!found)
+            handler->SendSysMessage("RP phase не найдены.");
+        return true;
     }
 
     static bool HandleLookupAreaCommand(ChatHandler* handler, char const* args)

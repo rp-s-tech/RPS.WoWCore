@@ -654,7 +654,7 @@ void WorldSession::HandleInitiateTradeOpcode(WorldPackets::Trade::InitiateTrade&
     }
 
     Player* pOther = ObjectAccessor::FindPlayer(initiateTrade.Guid);
-    if (!pOther)
+    if (!pOther || !GetPlayer()->CanSeeInPhaseContexts(pOther))
     {
         info.Status = TRADE_STATUS_NO_TARGET;
         SendTradeStatus(info);

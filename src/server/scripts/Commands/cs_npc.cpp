@@ -48,11 +48,14 @@ EndScriptData */
 #include "Player.h"
 #include "RBAC.h"
 #include "RolePlay.h"
+#include "RoleplayCommandPhaseGuard.h"
+#include "RoleplayPhaseMgr.h"
 #include "SmartEnum.h"
 #include "Transport.h"
 #include "World.h"
 #include "WorldSession.h"
 #include "Position.h"
+#include <fmt/format.h>
 
 using namespace Trinity::ChatCommands;
 
@@ -65,6 +68,35 @@ bool HandleNpcDespawnGroup(ChatHandler* handler, std::vector<Variant<uint32, EXA
 
 class npc_commandscript : public CommandScript
 {
+    static bool AllowsCreatureListContext(Player const* player, ObjectGuid::LowType spawnId)
+    {
+        if (!player)
+            return true;
+
+        return RoleplayCommandPhaseGuard::AllowsViewerSpawnContext(
+            RoleplayCommandPhaseGuard::Resolve(player, RoleplayPhaseSpawnType::Creature, spawnId), false);
+    }
+
+    static bool CheckCreatureMutation(ChatHandler* handler, ObjectGuid::LowType spawnId, std::string_view auditAction,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases = {})
+    {
+        Player* player = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!player)
+        {
+            handler->SendSysMessage("Команда доступна только в игре.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        bool const requestedBypass = allPhases.has_value();
+        bool const bypass =
+            RoleplayCommandPhaseGuard::ValidateAllPhasesBypass(player, handler, requestedBypass, auditAction);
+        if (requestedBypass && !bypass)
+            return false;
+        return RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(player, handler, RoleplayPhaseSpawnType::Creature,
+            spawnId, bypass, auditAction);
+    }
+
 public:
     npc_commandscript() : CommandScript("npc_commandscript") { }
 
@@ -148,10 +180,34 @@ public:
     //add spawn of creature
     static bool HandleNpcAddCommand(ChatHandler* handler, CreatureEntry id)
     {
+        Player* chr = handler->GetSession() ? handler->GetSession()->GetPlayer() : nullptr;
+        if (!chr)
+        {
+            handler->SendSysMessage("Команда доступна только в игре.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
+        uint64 const activePhaseId = sRoleplayPhaseMgr.GetPlayerPhaseId(chr->GetGUID().GetCounter(), chr->GetMapId());
+        bool const staffAccess = chr->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_RP_PHASE_ALL_PHASES);
+        bool const serverStaff = sRoleplayPhaseMgr.CanMutateCommonWorld(chr->GetSession()->GetSecurity());
+        if (!activePhaseId && !serverStaff)
+        {
+            handler->SendSysMessage("Создание постоянных существ в общем мире доступно только GM1+.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+        if (activePhaseId && !sRoleplayPhaseMgr.CanEdit(activePhaseId, chr->GetGUID().GetCounter(),
+            chr->GetSession()->GetAccountId(), staffAccess, serverStaff))
+        {
+            handler->SendSysMessage("Создание существ в RP phase требует роль editor, manager или owner.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+
         if (!sObjectMgr->GetCreatureTemplate(id))
             return false;
 
-        Player* chr = handler->GetSession()->GetPlayer();
         Map* map = chr->GetMap();
 
         if (Transport* trans = dynamic_cast<Transport*>(chr->GetTransport()))
@@ -164,7 +220,19 @@ public:
             data.spawnPoint.Relocate(chr->GetTransOffsetX(), chr->GetTransOffsetY(), chr->GetTransOffsetZ(), chr->GetTransOffsetO());
             if (Creature* creature = trans->CreateNPCPassenger(guid, &data))
             {
-                creature->SaveToDB(trans->GetGOInfo()->moTransport.SpawnMap, { map->GetDifficultyID() });
+                uint32 const spawnMapId = trans->GetGOInfo()->moTransport.SpawnMap;
+                creature->SaveToDB(spawnMapId, { map->GetDifficultyID() });
+                uint64 const phaseId = activePhaseId;
+                if (phaseId && !sRoleplayPhaseMgr.AssignPersistentSpawn(RoleplayPhaseSpawnType::Creature, guid, spawnMapId, phaseId))
+                {
+                    Creature::DeleteFromDB(guid);
+                    handler->SendSysMessage("Failed to assign the creature to the active RP phase.");
+                    handler->SetSentErrorMessage(true);
+                    return false;
+                }
+                sRoleplayPhaseMgr.WriteAudit(chr->GetGUID().GetCounter(), chr->GetSession()->GetAccountId(),
+                    "npc_add_spawn", phaseId, fmt::format(R"({{"spawn_id":{},"common_world":{}}})",
+                        guid, phaseId ? "false" : "true"));
                 sObjectMgr->AddCreatureToGrid(&data);
             }
             return true;
@@ -178,6 +246,19 @@ public:
         creature->SaveToDB(map->GetId(), { map->GetDifficultyID() });
 
         ObjectGuid::LowType db_guid = creature->GetSpawnId();
+        uint64 const phaseId = activePhaseId;
+        if (phaseId && !sRoleplayPhaseMgr.AssignPersistentSpawn(RoleplayPhaseSpawnType::Creature, db_guid, map->GetId(), phaseId))
+        {
+            creature->CleanupsBeforeDelete();
+            delete creature;
+            Creature::DeleteFromDB(db_guid);
+            handler->SendSysMessage("Failed to assign the creature to the active RP phase.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+        sRoleplayPhaseMgr.WriteAudit(chr->GetGUID().GetCounter(), chr->GetSession()->GetAccountId(),
+            "npc_add_spawn", phaseId, fmt::format(R"({{"spawn_id":{},"common_world":{}}})",
+                db_guid, phaseId ? "false" : "true"));
 
         // To call _LoadGoods(); _LoadQuests(); CreateTrainerSpells()
         // current "creature" variable is deleted and created fresh new, otherwise old values might trigger asserts or cause undefined behavior
@@ -332,7 +413,8 @@ public:
         return true;
     }
 
-    static bool HandleNpcDeleteCommand(ChatHandler* handler, Optional<CreatureSpawnId> spawnIdArg)
+    static bool HandleNpcDeleteCommand(ChatHandler* handler, Optional<CreatureSpawnId> spawnIdArg,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
         ObjectGuid::LowType spawnId;
         if (spawnIdArg)
@@ -354,6 +436,9 @@ public:
             }
             spawnId = creature->GetSpawnId();
         }
+
+        if (!CheckCreatureMutation(handler, spawnId, "npc_delete", allPhases))
+            return false;
 
         if (Creature::DeleteFromDB(spawnId))
         {
@@ -635,7 +720,13 @@ public:
                 if (!creatureTemplate)
                     continue;
 
-                handler->PSendSysMessage(LANG_CREATURE_LIST_CHAT, std::to_string(guid).c_str(), std::to_string(guid).c_str(), creatureTemplate->Name.c_str(), x, y, z, mapId, "", "");
+                if (!AllowsCreatureListContext(player, guid))
+                    continue;
+
+                std::string const phaseTag = RoleplayCommandPhaseGuard::FormatPhaseTag(
+                    RoleplayCommandPhaseGuard::GetSpawnPhaseId(player, RoleplayPhaseSpawnType::Creature, guid));
+
+                handler->PSendSysMessage(LANG_CREATURE_LIST_CHAT, std::to_string(guid).c_str(), std::to_string(guid).c_str(), creatureTemplate->Name.c_str(), x, y, z, mapId, "", phaseTag.c_str());
 
                 ++count;
             }
@@ -648,7 +739,8 @@ public:
     }
 
     //move selected creature
-    static bool HandleNpcMoveCommand(ChatHandler* handler, Optional<CreatureSpawnId> spawnid)
+    static bool HandleNpcMoveCommand(ChatHandler* handler, Optional<CreatureSpawnId> spawnid,
+        Optional<EXACT_SEQUENCE("--all-phases")> allPhases)
     {
         Creature* creature = handler->getSelectedCreature();
         Player const* player = handler->GetSession()->GetPlayer();
@@ -659,6 +751,10 @@ public:
             return false;
 
         ObjectGuid::LowType lowguid = spawnid ? *spawnid : creature->GetSpawnId();
+
+        if (!CheckCreatureMutation(handler, lowguid, "npc_move", allPhases))
+            return false;
+
         // Attempting creature load from DB data
         CreatureData const* data = sObjectMgr->GetCreatureData(lowguid);
         if (!data)

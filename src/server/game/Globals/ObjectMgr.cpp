@@ -7290,7 +7290,9 @@ AreaTriggerTeleport const* ObjectMgr::GetGoBackTrigger(uint32 Map) const
     if (!mapEntry || mapEntry->CorpseMapID < 0)
         return nullptr;
 
-    if (mapEntry->IsDungeon())
+    // Converted dungeon, raid, and scenario maps are MAP_COMMON after the Map.db2
+    // hotfix but retain their instance_template parent as the go-back destination.
+    if (mapEntry->IsDungeon() || mapEntry->IsWorldMap())
         if (InstanceTemplate const* iTemplate = GetInstanceTemplate(Map))
             parentId = iTemplate->Parent;
 

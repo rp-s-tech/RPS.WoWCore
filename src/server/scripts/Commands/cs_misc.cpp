@@ -39,6 +39,7 @@
 #include "ObjectMgr.h"
 #include "PhasingHandler.h"
 #include "Player.h"
+#include "RoleplayPhaseMgr.h"
 #include "RealmList.h"
 #include "SpellAuras.h"
 #include "SpellHistory.h"
@@ -292,6 +293,25 @@ public:
             handler->PSendSysMessage(LANG_LIQUID_STATUS, liquidStatus.level, liquidStatus.depth_level, liquidStatus.entry, uint32(liquidStatus.type_flags.AsUnderlyingType()), status);
 
         PhasingHandler::PrintToChat(handler, object);
+
+        // Logical RP world-map context (not native PhaseShift phases).
+        if (Player const* rpPlayer = object->ToPlayer())
+        {
+            uint64 const rpPhaseId = sRoleplayPhaseMgr.GetPlayerPhaseId(
+                rpPlayer->GetGUID().GetCounter(), rpPlayer->GetMapId());
+            if (rpPhaseId)
+            {
+                RoleplayPhaseInfo phaseInfo;
+                if (sRoleplayPhaseMgr.GetPhaseInfo(rpPhaseId, phaseInfo))
+                    handler->PSendSysMessage("RP Phase: %llu (%s)",
+                        static_cast<unsigned long long>(rpPhaseId), phaseInfo.Name.c_str());
+                else
+                    handler->PSendSysMessage("RP Phase: %llu",
+                        static_cast<unsigned long long>(rpPhaseId));
+            }
+            else
+                handler->SendSysMessage("RP Phase: 0 (common world)");
+        }
 
         return true;
     }

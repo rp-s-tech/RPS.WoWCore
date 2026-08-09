@@ -324,6 +324,8 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
         {
             return GetPhaseShift().CanSee(phaseShift);
         }
+        // Upstream-native only: PhaseShift::CanSee. Logical RP isolation uses
+        // CanSeeInPhaseContexts / CanShareRoleplayContext.
         bool InSamePhase(WorldObject const* obj) const
         {
             return GetPhaseShift().CanSee(obj->GetPhaseShift());
@@ -332,6 +334,8 @@ class TC_GAME_API WorldObject : public Object, public WorldLocation
         {
             return a && b && a->InSamePhase(b);
         }
+        bool CanShareRoleplayContext(WorldObject const* obj) const;
+        bool CanSeeInPhaseContexts(WorldObject const* obj, bool ignoreNative = false) const;
 
         int32 GetDBPhase() const { return _dbPhase; }
 

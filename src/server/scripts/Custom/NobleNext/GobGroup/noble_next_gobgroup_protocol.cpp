@@ -54,6 +54,9 @@ namespace
         { "gobject.group.sync",         rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_SYNC },
         { "gobject.group.move",         rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_MOVE },
         { "gobject.group.turn",         rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_TURN },
+        { "gobject.group.nudge",        rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_MOVE },
+        { "gobject.group.rotate",       rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_TURN },
+        { "gobject.group.scale",        rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_MOVE },
         { "gobject.group.relocate",     rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_RELOCATE },
         { "gobject.group.reload",       rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_RELOAD },
         { "gobject.group.cleanup",      rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_CLEANUP },
@@ -202,7 +205,7 @@ void SendInfo(Player* player, GobGroupInfoSnapshot const& snap)
         snap.Dirty ? 1 : 0,
         snap.Busy ? 1 : 0));
 
-    SendRaw(player, Trinity::StringFormat("INFO_OBJECT|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+    SendRaw(player, Trinity::StringFormat("INFO_OBJECT|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
         snap.Object.Guid,
         snap.Object.Entry,
         snap.Object.MapId,
@@ -211,18 +214,20 @@ void SendInfo(Player* player, GobGroupInfoSnapshot const& snap)
         FormatCoord(snap.Object.Z),
         FormatCoord(snap.Object.O),
         snap.Object.InGroup ? 1 : 0,
-        snap.Object.IsRoot ? 1 : 0));
+        snap.Object.IsRoot ? 1 : 0,
+        snap.Object.LogicalPhaseId));
 
     for (GobGroupObjectSnapshot const& member : snap.Members)
     {
-        SendRaw(player, Trinity::StringFormat("INFO_MEMBER|{}|{}|{}|{}|{}|{}|{}",
+        SendRaw(player, Trinity::StringFormat("INFO_MEMBER|{}|{}|{}|{}|{}|{}|{}|{}",
             member.Guid,
             member.Entry,
             member.MapId,
             FormatCoord(member.X),
             FormatCoord(member.Y),
             FormatCoord(member.Z),
-            FormatCoord(member.O)));
+            FormatCoord(member.O),
+            member.LogicalPhaseId));
     }
 
     SendRaw(player, Trinity::StringFormat("INFO_END|{}", snap.ObjectGuid));
@@ -240,11 +245,12 @@ void SendList(Player* player, GobGroupListSnapshot const& snap)
     SendRaw(player, Trinity::StringFormat("LIST_BEGIN|{}|{}", filter, snap.Items.size()));
     for (GobGroupListItemSnapshot const& item : snap.Items)
     {
-        SendRaw(player, Trinity::StringFormat("LIST_ITEM|{}|{}|{}|{}",
+        SendRaw(player, Trinity::StringFormat("LIST_ITEM|{}|{}|{}|{}|{}",
             item.RootGuid,
             EscapeField(item.Name),
             item.MemberCount,
-            item.MapId));
+            item.MapId,
+            item.LogicalPhaseId));
     }
     SendRaw(player, "LIST_END");
 }
@@ -263,7 +269,7 @@ void SendNear(Player* player, GobGroupNearSnapshot const& snap)
         uint32 const chunkCount = uint32(nameChunks.size());
         for (uint32 i = 0; i < chunkCount; ++i)
         {
-            SendRaw(player, Trinity::StringFormat("NEAR_ITEM|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            SendRaw(player, Trinity::StringFormat("NEAR_ITEM|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
                 item.RootGuid,
                 EscapeField(nameChunks[i]),
                 item.MemberCount,
@@ -273,7 +279,8 @@ void SendNear(Player* player, GobGroupNearSnapshot const& snap)
                 FormatCompactCoord(item.Y),
                 FormatCompactCoord(item.Z),
                 i + 1,
-                chunkCount));
+                chunkCount,
+                item.LogicalPhaseId));
         }
     }
 

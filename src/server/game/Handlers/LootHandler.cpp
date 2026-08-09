@@ -225,7 +225,7 @@ void WorldSession::HandleLootOpcode(WorldPackets::Loot::LootUnit& packet)
         return;
 
     Creature* lootTarget = ObjectAccessor::GetCreature(*GetPlayer(), packet.Unit);
-    if (!lootTarget)
+    if (!lootTarget || !GetPlayer()->CanSeeInPhaseContexts(lootTarget))
         return;
 
     AELootCreatureCheck check(_player, packet.Unit);
@@ -424,7 +424,7 @@ void WorldSession::HandleLootMasterGiveOpcode(WorldPackets::Loot::MasterLootItem
 
     // player on other map
     Player* target = ObjectAccessor::GetPlayer(*_player, masterLootItem.Target);
-    if (!target)
+    if (!target || !_player->CanSeeInPhaseContexts(target))
     {
         _player->SendLootError(ObjectGuid::Empty, ObjectGuid::Empty, LOOT_ERROR_PLAYER_NOT_FOUND);
         return;

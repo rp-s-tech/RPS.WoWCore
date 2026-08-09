@@ -72,8 +72,70 @@ namespace RoleplayCore::NobleNext::Battle
 
         std::span<ChatCommandBuilder const> GetCommands() const override
         {
+            // Canonical: .rps character set|add|dam|remove <stat>
+            // Legacy flat aliases (.sethp, …) kept for Battle UI / muscle memory.
+            static ChatCommandTable charSetTable =
+            {
+                { "hp",       HandleSetHp,       LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "armor",    HandleSetArmor,    LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "pharmor",  HandleSetPhArmor,  LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "magarmor", HandleSetMagArmor, LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "en",       HandleSetEn,       LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "energy",   HandleSetEn,       LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "focus",    HandleSetFocus,    LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "wound",    HandleSetWound,    LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "status",   HandleSetStatus,   LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "aurastats", HandleSetAuraStats, LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "buff",     HandleSetBuff,     LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "debuff",   HandleSetDebuff,   LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "harm",     HandleSetHarm,     LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "actions",  HandleSetActions,  LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+            static ChatCommandTable charAddTable =
+            {
+                { "hp",       HandleAddHp,       LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "armor",    HandleAddArmor,    LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "pharmor",  HandleAddPhArmor,  LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "magarmor", HandleAddMagArmor, LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "en",       HandleAddEn,       LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "energy",   HandleAddEn,       LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "focus",    HandleAddFocus,    LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+            static ChatCommandTable charDamTable =
+            {
+                { "hp",     HandleDamHp,     LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "en",     HandleDamEn,     LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "energy", HandleDamEn,     LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+            static ChatCommandTable charRemoveTable =
+            {
+                { "armor",    HandleRemoveArmor,    LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "pharmor",  HandleRemovePhArmor,  LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "magarmor", HandleRemoveMagArmor, LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "focus",    HandleRemoveFocus,    LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "status",   HandleRemoveStatus,   LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "aurastats", HandleRemoveAuraStats, LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "buff",     HandleRemoveBuff,     LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "debuff",   HandleRemoveDebuff,   LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "harm",     HandleRemoveHarm,     LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "actions",  HandleRemoveActions,  LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+            static ChatCommandTable characterTable =
+            {
+                { "set",    charSetTable },
+                { "add",    charAddTable },
+                { "dam",    charDamTable },
+                { "remove", charRemoveTable },
+                { "wakeup", HandleWakeup, LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+            static ChatCommandTable rpsTable =
+            {
+                { "character", characterTable },
+            };
+
             static ChatCommandTable commandTable =
             {
+                { "rps", rpsTable },
                 { "sethp",         HandleSetHp,         LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "addhp",         HandleAddHp,         LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "damhp",         HandleDamHp,         LANG_COMMAND_BATTLE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },

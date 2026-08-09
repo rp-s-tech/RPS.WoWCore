@@ -138,6 +138,12 @@ void GameEventMgr::StartInternalEvent(uint16 event_id)
 
 bool GameEventMgr::StartEvent(uint16 event_id, bool overwrite)
 {
+    if (!sWorld->getBoolConfig(CONFIG_ROLEPLAY_GAME_EVENTS_ENABLED))
+    {
+        TC_LOG_WARN("gameevent", "GameEvent {} was not started because Roleplay.GameEvents.Enabled is disabled.", event_id);
+        return false;
+    }
+
     GameEventData &data = mGameEvent[event_id];
     if (data.state == GAMEEVENT_NORMAL || data.state == GAMEEVENT_INTERNAL)
     {
@@ -1000,6 +1006,24 @@ void GameEventMgr::Initialize()
 uint32 GameEventMgr::StartSystem()                           // return the next event delay in ms
 {
     m_ActiveEvents.clear();
+
+    if (!sWorld->getBoolConfig(CONFIG_ROLEPLAY_GAME_EVENTS_ENABLED))
+    {
+        uint32 baselineEvents = 0;
+        for (uint16 eventId = 1; eventId < mGameEvent.size(); ++eventId)
+        {
+            if (!mGameEvent[eventId].isValid())
+                continue;
+
+            GameEventSpawn(-static_cast<int16>(eventId));
+            ++baselineEvents;
+        }
+
+        isSystemInit = true;
+        TC_LOG_INFO("gameevent", "Game events are disabled by Roleplay.GameEvents.Enabled; loaded event data and spawned negative baseline for {} valid events.", baselineEvents);
+        return max_ge_check_delay * IN_MILLISECONDS;
+    }
+
     uint32 delay = Update();
     isSystemInit = true;
     return delay;
@@ -1007,6 +1031,12 @@ uint32 GameEventMgr::StartSystem()                           // return the next 
 
 void GameEventMgr::StartArenaSeason()
 {
+    if (!sWorld->getBoolConfig(CONFIG_ROLEPLAY_GAME_EVENTS_ENABLED))
+    {
+        TC_LOG_WARN("gameevent", "Arena season was not started because Roleplay.GameEvents.Enabled is disabled.");
+        return;
+    }
+
     uint8 season = sWorld->getIntConfig(CONFIG_ARENA_SEASON_ID);
     QueryResult result = WorldDatabase.PQuery("SELECT eventEntry FROM game_event_arena_seasons WHERE season = '{}'", season);
 
@@ -1032,6 +1062,9 @@ void GameEventMgr::StartArenaSeason()
 
 uint32 GameEventMgr::Update()                               // return the next event delay in ms
 {
+    if (!sWorld->getBoolConfig(CONFIG_ROLEPLAY_GAME_EVENTS_ENABLED))
+        return max_ge_check_delay * IN_MILLISECONDS;
+
     time_t currenttime = GameTime::GetGameTime();
     uint32 nextEventDelay = max_ge_check_delay;             // 1 day
     uint32 calcDelay;

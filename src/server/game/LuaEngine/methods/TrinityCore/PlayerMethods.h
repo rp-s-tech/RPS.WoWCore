@@ -7,6 +7,7 @@
 #ifndef PLAYERMETHODS_H
 #define PLAYERMETHODS_H
 
+#include "DatabaseEnv.h"
 #include "InstanceLockMgr.h"
 #include "RestMgr.h"
 #include "ChatPackets.h"
@@ -14,9 +15,15 @@
 #include "MiscPackets.h"
 #include "NPCPackets.h"
 #include "PartyPackets.h"
+#include "CreatureOutfit.h"
+#include "ObjectMgr.h"
+#include "RolePlay.h"
+#include "RoleplayPhaseMgr.h"
 #include "Unit.h"
 #include "Weather.h"
 #include <boost/callable_traits/args.hpp>
+#include <algorithm>
+#include <vector>
 
 /***
  * Inherits all methods from: [Object], [WorldObject], [Unit]
@@ -3958,6 +3965,743 @@ namespace LuaPlayer
         return 0;
     }
 
+    /**
+     * Returns a page of Custom NPC rows for picker UI.
+     * Non-administrators always receive only their own keys.
+     * Administrators may pass includeAll=true to see the full registry.
+     *
+     * @param bool includeAll = false
+     * @param uint32 offset = 0
+     * @param uint32 limit = 50
+     * @return table rows : { key, name, entry, owner, models, equip, spawns }
+     */
+    int GetCustomNpcList(Eluna* E, Player* player)
+    {
+        bool includeAll = E->CHECKVAL<bool>(2, false);
+        uint32 offset = E->CHECKVAL<uint32>(3, 0);
+        uint32 limit = E->CHECKVAL<uint32>(4, 50);
+        if (limit == 0 || limit > 200)
+            limit = 50;
+
+        bool isAdmin = player->GetSession() && player->GetSession()->GetSecurity() >= SEC_ADMINISTRATOR;
+        if (!isAdmin)
+            includeAll = false;
+
+        uint32 bnetAccountId = player->GetSession() ? player->GetSession()->GetBattlenetAccountId() : 0;
+        CustomNpcDataContainer const store = sRoleplay->GetCustomNpcContainer();
+
+        std::vector<CustomNpcData const*> rows;
+        rows.reserve(store.size());
+        for (auto const& pair : store)
+        {
+            CustomNpcData const& npc = pair.second;
+            if (!includeAll)
+            {
+                if (!bnetAccountId || npc.ownerBnetAccountId != bnetAccountId)
+                    continue;
+            }
+            rows.push_back(&npc);
+        }
+
+        std::sort(rows.begin(), rows.end(), [](CustomNpcData const* a, CustomNpcData const* b)
+        {
+            return a->key < b->key;
+        });
+
+        lua_createtable(E->L, 0, 0);
+        int tbl = lua_gettop(E->L);
+        uint32 written = 0;
+        for (uint32 i = offset; i < rows.size() && written < limit; ++i)
+        {
+            CustomNpcData const& npc = *rows[i];
+            std::string name;
+            if (CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(npc.templateId))
+                name = cInfo->Name;
+
+            lua_createtable(E->L, 0, 7);
+            int row = lua_gettop(E->L);
+
+            E->Push("key");
+            E->Push(npc.key);
+            lua_rawset(E->L, row);
+
+            E->Push("name");
+            E->Push(name);
+            lua_rawset(E->L, row);
+
+            E->Push("entry");
+            E->Push(npc.templateId);
+            lua_rawset(E->L, row);
+
+            E->Push("owner");
+            E->Push(npc.ownerAlias.empty() ? sRoleplay->GetCustomNpcOwnerDisplay(npc.key) : npc.ownerAlias);
+            lua_rawset(E->L, row);
+
+            E->Push("models");
+            E->Push(uint32(sRoleplay->GetModelVariationCountForNpc(npc.key)));
+            lua_rawset(E->L, row);
+
+            E->Push("equip");
+            E->Push(uint32(sRoleplay->GetEquipmentVariationCountForNpc(npc.key)));
+            lua_rawset(E->L, row);
+
+            E->Push("spawns");
+            E->Push(uint32(npc.spawns.size()));
+            lua_rawset(E->L, row);
+
+            lua_rawseti(E->L, tbl, ++written);
+        }
+
+        lua_settop(E->L, tbl);
+        return 1;
+    }
+
+    /**
+     * Returns Custom NPC race catalog for picker UI.
+     *
+     * @param bool availableOnly = true
+     * @return table rows : { raceId, name, available, listIndex }
+     */
+    int GetCustomNpcRaceCatalog(Eluna* E, Player* /*player*/)
+    {
+        bool availableOnly = E->CHECKVAL<bool>(2, true);
+        std::vector<CustomNpcRaceDescriptor> races = sRoleplay->BuildCustomNpcRaceList(availableOnly);
+
+        lua_createtable(E->L, races.size(), 0);
+        int tbl = lua_gettop(E->L);
+        uint32 i = 0;
+        for (CustomNpcRaceDescriptor const& race : races)
+        {
+            lua_createtable(E->L, 0, 4);
+            int row = lua_gettop(E->L);
+
+            E->Push("raceId");
+            E->Push(uint32(race.race));
+            lua_rawset(E->L, row);
+
+            E->Push("name");
+            E->Push(race.name);
+            lua_rawset(E->L, row);
+
+            E->Push("available");
+            E->Push(race.available);
+            lua_rawset(E->L, row);
+
+            E->Push("listIndex");
+            E->Push(race.listIndex);
+            lua_rawset(E->L, row);
+
+            lua_rawseti(E->L, tbl, ++i);
+        }
+
+        lua_settop(E->L, tbl);
+        return 1;
+    }
+
+    /**
+     * Returns Custom NPC editor detail for one key + model variation (Look hydrate).
+     *
+     * Ownership mirrors GetCustomNpcList: owner bnet, or any key for SEC_ADMINISTRATOR.
+     * Non-outfit displayIds return isOutfit=false without inventing race/gender.
+     *
+     * @param string key
+     * @param uint8 variation = 1 (1-based model index)
+     * @return table|nil detail, string|nil err
+     */
+    int GetCustomNpcDetail(Eluna* E, Player* player)
+    {
+        std::string key = E->CHECKVAL<std::string>(2);
+        uint8 variation = E->CHECKVAL<uint8>(3, 1);
+
+        auto pushError = [E](char const* err) -> int
+        {
+            E->Push();
+            E->Push(err);
+            return 2;
+        };
+
+        if (key.empty())
+            return pushError("empty key");
+
+        CustomNpcDataContainer const store = sRoleplay->GetCustomNpcContainer();
+        auto itr = store.find(key);
+        if (itr == store.end())
+            return pushError("not found");
+
+        CustomNpcData const& npc = itr->second;
+        bool const isAdmin = player->GetSession() && player->GetSession()->GetSecurity() >= SEC_ADMINISTRATOR;
+        uint32 const bnetAccountId = player->GetSession() ? player->GetSession()->GetBattlenetAccountId() : 0;
+        if (!isAdmin)
+        {
+            if (!bnetAccountId || npc.ownerBnetAccountId != bnetAccountId)
+                return pushError("access denied");
+        }
+
+        CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(npc.templateId);
+        if (!cInfo)
+            return pushError("template missing");
+
+        uint8 const modelCount = sRoleplay->GetModelVariationCountForNpc(key);
+        if (variation < 1 || variation > modelCount || variation > cInfo->Models.size())
+            return pushError("variation out of range");
+
+        CreatureModel const& model = cInfo->Models[variation - 1];
+        uint32 const displayId = model.CreatureDisplayID;
+        float const scale = model.DisplayScale;
+        bool const isOutfitDisplay = CreatureOutfit::IsFake(displayId);
+        CreatureOutfit const* outfit = isOutfitDisplay ? sRoleplay->GetCustomNpcOutfit(key, variation) : nullptr;
+        bool const hasOutfit = outfit != nullptr;
+
+        lua_createtable(E->L, 0, 16);
+        int row = lua_gettop(E->L);
+
+        E->Push("key");
+        E->Push(npc.key);
+        lua_rawset(E->L, row);
+
+        E->Push("entry");
+        E->Push(npc.templateId);
+        lua_rawset(E->L, row);
+
+        E->Push("name");
+        E->Push(cInfo->Name);
+        lua_rawset(E->L, row);
+
+        E->Push("subname");
+        E->Push(cInfo->SubName);
+        lua_rawset(E->L, row);
+
+        E->Push("owner");
+        E->Push(npc.ownerAlias.empty() ? sRoleplay->GetCustomNpcOwnerDisplay(npc.key) : npc.ownerAlias);
+        lua_rawset(E->L, row);
+
+        E->Push("canEdit");
+        E->Push(sRoleplay->CanEditCustomNpc(key, player, isAdmin));
+        lua_rawset(E->L, row);
+
+        E->Push("models");
+        E->Push(uint32(modelCount));
+        lua_rawset(E->L, row);
+
+        E->Push("equip");
+        E->Push(uint32(sRoleplay->GetEquipmentVariationCountForNpc(key)));
+        lua_rawset(E->L, row);
+
+        E->Push("spawns");
+        E->Push(uint32(npc.spawns.size()));
+        lua_rawset(E->L, row);
+
+        E->Push("variation");
+        E->Push(uint32(variation));
+        lua_rawset(E->L, row);
+
+        E->Push("displayId");
+        E->Push(displayId);
+        lua_rawset(E->L, row);
+
+        E->Push("scale");
+        E->Push(scale);
+        lua_rawset(E->L, row);
+
+        E->Push("isOutfit");
+        E->Push(hasOutfit); // true only when fake display has a loaded CreatureOutfit
+        lua_rawset(E->L, row);
+
+        if (hasOutfit)
+        {
+            E->Push("race");
+            E->Push(uint32(outfit->GetRace()));
+            lua_rawset(E->L, row);
+
+            E->Push("gender");
+            E->Push(uint32(outfit->GetGender()));
+            lua_rawset(E->L, row);
+
+            E->Push("outfitId");
+            E->Push(outfit->GetId());
+            lua_rawset(E->L, row);
+
+            lua_createtable(E->L, int(outfit->Customizations.size()), 0);
+            int custTbl = lua_gettop(E->L);
+            uint32 ci = 0;
+            for (UF::ChrCustomizationChoice const& choice : outfit->Customizations)
+            {
+                lua_createtable(E->L, 0, 2);
+                int cRow = lua_gettop(E->L);
+
+                E->Push("optionId");
+                E->Push(choice.ChrCustomizationOptionID);
+                lua_rawset(E->L, cRow);
+
+                E->Push("choiceId");
+                E->Push(choice.ChrCustomizationChoiceID);
+                lua_rawset(E->L, cRow);
+
+                lua_rawseti(E->L, custTbl, ++ci);
+            }
+            E->Push("customizations");
+            lua_pushvalue(E->L, custTbl);
+            lua_rawset(E->L, row);
+            lua_pop(E->L, 1);
+        }
+        else
+        {
+            lua_createtable(E->L, 0, 0);
+            E->Push("customizations");
+            lua_pushvalue(E->L, -2);
+            lua_rawset(E->L, row);
+            lua_pop(E->L, 1);
+        }
+
+        lua_settop(E->L, row);
+        return 1;
+    }
+
+    /**
+     * Returns dense ChrCustomization option list for a Custom NPC outfit (face browser).
+     * Same source as `.cnpc face list`: BuildCustomizationOptionList + choice counts for outfit.
+     *
+     * @param string key
+     * @param uint8 variation = 1
+     * @return table|nil payload, string|nil err
+     *   payload: { key, variation, isOutfit, options = [{ index, optionId, name, choiceCount, currentChoiceIndex, currentChoiceId }] }
+     */
+    int GetCustomNpcFaceOptions(Eluna* E, Player* player)
+    {
+        std::string key = E->CHECKVAL<std::string>(2);
+        uint8 variation = E->CHECKVAL<uint8>(3, 1);
+
+        auto pushError = [E](char const* err) -> int
+        {
+            E->Push();
+            E->Push(err);
+            return 2;
+        };
+
+        if (key.empty())
+            return pushError("empty key");
+
+        CustomNpcDataContainer const store = sRoleplay->GetCustomNpcContainer();
+        auto itr = store.find(key);
+        if (itr == store.end())
+            return pushError("not found");
+
+        CustomNpcData const& npc = itr->second;
+        bool const isAdmin = player->GetSession() && player->GetSession()->GetSecurity() >= SEC_ADMINISTRATOR;
+        uint32 const bnetAccountId = player->GetSession() ? player->GetSession()->GetBattlenetAccountId() : 0;
+        if (!isAdmin)
+        {
+            if (!bnetAccountId || npc.ownerBnetAccountId != bnetAccountId)
+                return pushError("access denied");
+        }
+
+        CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(npc.templateId);
+        if (!cInfo)
+            return pushError("template missing");
+
+        uint8 const modelCount = sRoleplay->GetModelVariationCountForNpc(key);
+        if (variation < 1 || variation > modelCount || variation > cInfo->Models.size())
+            return pushError("variation out of range");
+
+        LocaleConstant locale = DEFAULT_LOCALE;
+        if (player->GetSession())
+            locale = player->GetSession()->GetSessionDbcLocale();
+
+        CreatureOutfit const* outfit = sRoleplay->GetCustomNpcOutfit(key, variation);
+        bool const hasOutfit = outfit != nullptr;
+
+        lua_createtable(E->L, 0, 4);
+        int row = lua_gettop(E->L);
+
+        E->Push("key");
+        E->Push(npc.key);
+        lua_rawset(E->L, row);
+
+        E->Push("variation");
+        E->Push(uint32(variation));
+        lua_rawset(E->L, row);
+
+        E->Push("isOutfit");
+        E->Push(hasOutfit);
+        lua_rawset(E->L, row);
+
+        if (hasOutfit)
+        {
+            auto options = sRoleplay->BuildCustomizationOptionList(Races(outfit->GetRace()), Gender(outfit->GetGender()));
+            lua_createtable(E->L, int(options.size()), 0);
+            int optTbl = lua_gettop(E->L);
+
+            uint32 oi = 0;
+            for (ChrCustomizationOptionEntry const* option : options)
+            {
+                uint32 const choiceCount = uint32(sRoleplay->BuildCustomizationChoiceListForOutfit(option->ID, *outfit).size());
+                uint32 const currentChoiceIndex = sRoleplay->FindCustomizationChoiceIndex(*outfit, option);
+                uint32 currentChoiceId = 0;
+                for (UF::ChrCustomizationChoice const& customization : outfit->Customizations)
+                {
+                    if (customization.ChrCustomizationOptionID == option->ID)
+                    {
+                        currentChoiceId = customization.ChrCustomizationChoiceID;
+                        break;
+                    }
+                }
+
+                lua_createtable(E->L, 0, 6);
+                int oRow = lua_gettop(E->L);
+
+                E->Push("index");
+                E->Push(++oi);
+                lua_rawset(E->L, oRow);
+
+                E->Push("optionId");
+                E->Push(option->ID);
+                lua_rawset(E->L, oRow);
+
+                E->Push("name");
+                E->Push(sRoleplay->GetCustomizationOptionLabel(option, locale));
+                lua_rawset(E->L, oRow);
+
+                E->Push("choiceCount");
+                E->Push(choiceCount);
+                lua_rawset(E->L, oRow);
+
+                E->Push("currentChoiceIndex");
+                E->Push(currentChoiceIndex);
+                lua_rawset(E->L, oRow);
+
+                E->Push("currentChoiceId");
+                E->Push(currentChoiceId);
+                lua_rawset(E->L, oRow);
+
+                lua_rawseti(E->L, optTbl, oi);
+            }
+
+            E->Push("options");
+            lua_pushvalue(E->L, optTbl);
+            lua_rawset(E->L, row);
+            lua_pop(E->L, 1);
+        }
+        else
+        {
+            lua_createtable(E->L, 0, 0);
+            E->Push("options");
+            lua_pushvalue(E->L, -2);
+            lua_rawset(E->L, row);
+            lua_pop(E->L, 1);
+        }
+
+        lua_settop(E->L, row);
+        return 1;
+    }
+
+    /**
+     * Returns dense choice list for one face option index (1-based), like `.cnpc face choices`.
+     *
+     * @param string key
+     * @param uint32 optionIndex
+     * @param uint8 variation = 1
+     * @return table|nil payload, string|nil err
+     *   payload: { key, variation, optionIndex, optionId, name, currentChoiceIndex, choices = [{ index, choiceId, name }] }
+     */
+    int GetCustomNpcFaceChoices(Eluna* E, Player* player)
+    {
+        std::string key = E->CHECKVAL<std::string>(2);
+        uint32 optionIndex = E->CHECKVAL<uint32>(3);
+        uint8 variation = E->CHECKVAL<uint8>(4, 1);
+
+        auto pushError = [E](char const* err) -> int
+        {
+            E->Push();
+            E->Push(err);
+            return 2;
+        };
+
+        if (key.empty())
+            return pushError("empty key");
+        if (optionIndex < 1)
+            return pushError("option index out of range");
+
+        CustomNpcDataContainer const store = sRoleplay->GetCustomNpcContainer();
+        auto itr = store.find(key);
+        if (itr == store.end())
+            return pushError("not found");
+
+        CustomNpcData const& npc = itr->second;
+        bool const isAdmin = player->GetSession() && player->GetSession()->GetSecurity() >= SEC_ADMINISTRATOR;
+        uint32 const bnetAccountId = player->GetSession() ? player->GetSession()->GetBattlenetAccountId() : 0;
+        if (!isAdmin)
+        {
+            if (!bnetAccountId || npc.ownerBnetAccountId != bnetAccountId)
+                return pushError("access denied");
+        }
+
+        CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(npc.templateId);
+        if (!cInfo)
+            return pushError("template missing");
+
+        uint8 const modelCount = sRoleplay->GetModelVariationCountForNpc(key);
+        if (variation < 1 || variation > modelCount || variation > cInfo->Models.size())
+            return pushError("variation out of range");
+
+        CreatureOutfit const* outfit = sRoleplay->GetCustomNpcOutfit(key, variation);
+        if (!outfit)
+            return pushError("no outfit");
+
+        auto options = sRoleplay->BuildCustomizationOptionList(Races(outfit->GetRace()), Gender(outfit->GetGender()));
+        if (optionIndex > options.size())
+            return pushError("option index out of range");
+
+        ChrCustomizationOptionEntry const* option = options[optionIndex - 1];
+        auto choices = sRoleplay->BuildCustomizationChoiceListForOutfit(option->ID, *outfit);
+        uint32 const currentChoiceIndex = sRoleplay->FindCustomizationChoiceIndex(*outfit, option);
+
+        LocaleConstant locale = DEFAULT_LOCALE;
+        if (player->GetSession())
+            locale = player->GetSession()->GetSessionDbcLocale();
+
+        lua_createtable(E->L, 0, 7);
+        int row = lua_gettop(E->L);
+
+        E->Push("key");
+        E->Push(npc.key);
+        lua_rawset(E->L, row);
+
+        E->Push("variation");
+        E->Push(uint32(variation));
+        lua_rawset(E->L, row);
+
+        E->Push("optionIndex");
+        E->Push(optionIndex);
+        lua_rawset(E->L, row);
+
+        E->Push("optionId");
+        E->Push(option->ID);
+        lua_rawset(E->L, row);
+
+        E->Push("name");
+        E->Push(sRoleplay->GetCustomizationOptionLabel(option, locale));
+        lua_rawset(E->L, row);
+
+        E->Push("currentChoiceIndex");
+        E->Push(currentChoiceIndex);
+        lua_rawset(E->L, row);
+
+        lua_createtable(E->L, int(choices.size()), 0);
+        int chTbl = lua_gettop(E->L);
+        uint32 ci = 0;
+        for (ChrCustomizationChoiceEntry const* choice : choices)
+        {
+            lua_createtable(E->L, 0, 3);
+            int cRow = lua_gettop(E->L);
+
+            E->Push("index");
+            E->Push(++ci);
+            lua_rawset(E->L, cRow);
+
+            E->Push("choiceId");
+            E->Push(choice->ID);
+            lua_rawset(E->L, cRow);
+
+            E->Push("name");
+            E->Push(sRoleplay->GetCustomizationChoiceLabel(choice, locale));
+            lua_rawset(E->L, cRow);
+
+            lua_rawseti(E->L, chTbl, ci);
+        }
+
+        E->Push("choices");
+        lua_pushvalue(E->L, chTbl);
+        lua_rawset(E->L, row);
+        lua_pop(E->L, 1);
+
+        lua_settop(E->L, row);
+        return 1;
+    }
+
+    /**
+     * Returns all model variations for a Custom NPC key (like `.cnpc model list`).
+     *
+     * @param string key
+     * @return table|nil payload, string|nil err
+     *   payload: { key, models = [{ variation, displayId, scale, isOutfit }] }
+     */
+    int GetCustomNpcModelList(Eluna* E, Player* player)
+    {
+        std::string key = E->CHECKVAL<std::string>(2);
+
+        auto pushError = [E](char const* err) -> int
+        {
+            E->Push();
+            E->Push(err);
+            return 2;
+        };
+
+        if (key.empty())
+            return pushError("empty key");
+
+        CustomNpcDataContainer const store = sRoleplay->GetCustomNpcContainer();
+        auto itr = store.find(key);
+        if (itr == store.end())
+            return pushError("not found");
+
+        CustomNpcData const& npc = itr->second;
+        bool const isAdmin = player->GetSession() && player->GetSession()->GetSecurity() >= SEC_ADMINISTRATOR;
+        uint32 const bnetAccountId = player->GetSession() ? player->GetSession()->GetBattlenetAccountId() : 0;
+        if (!isAdmin)
+        {
+            if (!bnetAccountId || npc.ownerBnetAccountId != bnetAccountId)
+                return pushError("access denied");
+        }
+
+        CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(npc.templateId);
+        if (!cInfo)
+            return pushError("template missing");
+
+        lua_createtable(E->L, 0, 2);
+        int row = lua_gettop(E->L);
+
+        E->Push("key");
+        E->Push(npc.key);
+        lua_rawset(E->L, row);
+
+        lua_createtable(E->L, int(cInfo->Models.size()), 0);
+        int modelsTbl = lua_gettop(E->L);
+        for (uint8 i = 0; i < cInfo->Models.size(); ++i)
+        {
+            CreatureModel const& model = cInfo->Models[i];
+            lua_createtable(E->L, 0, 4);
+            int mRow = lua_gettop(E->L);
+
+            E->Push("variation");
+            E->Push(uint32(i + 1));
+            lua_rawset(E->L, mRow);
+
+            E->Push("displayId");
+            E->Push(model.CreatureDisplayID);
+            lua_rawset(E->L, mRow);
+
+            E->Push("scale");
+            E->Push(model.DisplayScale);
+            lua_rawset(E->L, mRow);
+
+            E->Push("isOutfit");
+            E->Push(CreatureOutfit::IsFake(model.CreatureDisplayID));
+            lua_rawset(E->L, mRow);
+
+            lua_rawseti(E->L, modelsTbl, i + 1);
+        }
+
+        E->Push("models");
+        lua_pushvalue(E->L, modelsTbl);
+        lua_rawset(E->L, row);
+        lua_pop(E->L, 1);
+
+        lua_settop(E->L, row);
+        return 1;
+    }
+
+    /**
+     * Returns owned GameObject rows from roleplay.gameobject_extra (same source as `.gobject list my`).
+     *
+     * @param bool allPhases = false : when false, filter by current logical RP phase
+     * @param uint32 offset = 0
+     * @param uint32 limit = 100
+     * @return table rows : { guid, entry, name, map, x, y, z, phaseId }
+     */
+    int GetOwnedGameObjectList(Eluna* E, Player* player)
+    {
+        bool allPhases = E->CHECKVAL<bool>(2, false);
+        uint32 offset = E->CHECKVAL<uint32>(3, 0);
+        uint32 limit = E->CHECKVAL<uint32>(4, 100);
+        if (limit == 0 || limit > 500)
+            limit = 100;
+
+        lua_createtable(E->L, 0, 0);
+        int tbl = lua_gettop(E->L);
+
+        if (!player || !player->GetSession())
+            return 1;
+
+        uint32 const bnetAccountId = player->GetSession()->GetBattlenetAccountId();
+        if (!bnetAccountId)
+            return 1;
+
+        uint64 const filterPhaseId = allPhases
+            ? 0
+            : sRoleplayPhaseMgr.GetPlayerPhaseId(player->GetGUID().GetCounter(), player->GetMapId());
+
+        RoleplayDatabasePreparedStatement* stmt = RoleplayDatabase.GetPreparedStatement(Roleplay_SEL_GAMEOBJECTEXTRA_BY_BNET);
+        stmt->setUInt32(0, bnetAccountId);
+        PreparedQueryResult result = RoleplayDatabase.Query(stmt);
+        if (!result)
+            return 1;
+
+        uint32 skipped = 0;
+        uint32 written = 0;
+        do
+        {
+            ObjectGuid::LowType const spawnId = result->Fetch()[0].GetUInt64();
+            GameObjectData const* data = sObjectMgr->GetGameObjectData(spawnId);
+            if (!data)
+                continue;
+
+            uint64 const spawnPhase = sRoleplayPhaseMgr.GetSpawnPhaseId(RoleplayPhaseSpawnType::GameObject, spawnId, data->mapId);
+            if (!allPhases && spawnPhase != filterPhaseId)
+                continue;
+
+            if (skipped < offset)
+            {
+                ++skipped;
+                continue;
+            }
+            if (written >= limit)
+                break;
+
+            GameObjectTemplate const* goInfo = sObjectMgr->GetGameObjectTemplate(data->id);
+            std::string const name = goInfo ? goInfo->name : "<unknown>";
+
+            lua_createtable(E->L, 0, 8);
+            int row = lua_gettop(E->L);
+
+            E->Push("guid");
+            E->Push(static_cast<unsigned long long>(spawnId));
+            lua_rawset(E->L, row);
+
+            E->Push("entry");
+            E->Push(data->id);
+            lua_rawset(E->L, row);
+
+            E->Push("name");
+            E->Push(name);
+            lua_rawset(E->L, row);
+
+            E->Push("map");
+            E->Push(uint32(data->mapId));
+            lua_rawset(E->L, row);
+
+            E->Push("x");
+            E->Push(data->spawnPoint.GetPositionX());
+            lua_rawset(E->L, row);
+
+            E->Push("y");
+            E->Push(data->spawnPoint.GetPositionY());
+            lua_rawset(E->L, row);
+
+            E->Push("z");
+            E->Push(data->spawnPoint.GetPositionZ());
+            lua_rawset(E->L, row);
+
+            E->Push("phaseId");
+            E->Push(static_cast<unsigned long long>(spawnPhase));
+            lua_rawset(E->L, row);
+
+            lua_rawseti(E->L, tbl, ++written);
+        } while (result->NextRow());
+
+        lua_settop(E->L, tbl);
+        return 1;
+    }
+
     ElunaRegister<Player> PlayerMethods[] =
     {
         // Getters
@@ -4225,6 +4969,13 @@ namespace LuaPlayer
         { "SendCinematicStart", &LuaPlayer::SendCinematicStart },
         { "SendMovieStart", &LuaPlayer::SendMovieStart },
         { "RunCommand", &LuaPlayer::RunCommand },
+        { "GetCustomNpcList", &LuaPlayer::GetCustomNpcList },
+        { "GetCustomNpcRaceCatalog", &LuaPlayer::GetCustomNpcRaceCatalog },
+        { "GetCustomNpcDetail", &LuaPlayer::GetCustomNpcDetail },
+        { "GetCustomNpcFaceOptions", &LuaPlayer::GetCustomNpcFaceOptions },
+        { "GetCustomNpcFaceChoices", &LuaPlayer::GetCustomNpcFaceChoices },
+        { "GetCustomNpcModelList", &LuaPlayer::GetCustomNpcModelList },
+        { "GetOwnedGameObjectList", &LuaPlayer::GetOwnedGameObjectList },
 
         // Not implemented methods
         { "GetHonorStoredKills", METHOD_REG_NONE }, // classic only

@@ -1220,7 +1220,8 @@ void WorldSession::HandleCloseInteraction(WorldPackets::Misc::CloseInteraction& 
 void WorldSession::HandleConversationLineStarted(WorldPackets::Misc::ConversationLineStarted& conversationLineStarted)
 {
     if (Conversation* conversation = ObjectAccessor::GetConversation(*_player, conversationLineStarted.ConversationGUID))
-        conversation->AI()->OnLineStarted(conversationLineStarted.LineID, _player);
+        if (_player->CanSeeInPhaseContexts(conversation))
+            conversation->AI()->OnLineStarted(conversationLineStarted.LineID, _player);
 }
 
 void WorldSession::HandleRequestLatestSplashScreen(WorldPackets::Misc::RequestLatestSplashScreen& /*requestLatestSplashScreen*/)

@@ -3256,11 +3256,13 @@ struct MapEntry
     bool IsGarrison() const { return GetFlags().HasFlag(MapFlags::Garrison); }
     bool IsSplitByFaction() const
     {
-        return ID == 609 || // Acherus (DeathKnight Start)
+        // MAP_COMMON uses one shared (mapId, 0) world map. Instanceable maps use their
+        // dedicated paths; retain the upstream faction split only for non-common maps.
+        return !IsWorldMap() && (ID == 609 || // Acherus (DeathKnight Start)
             ID == 1265 ||   // Assault on the Dark Portal (WoD Intro)
             ID == 1481 ||   // Mardum (DH Start)
             ID == 2175 ||   // Exiles Reach - NPE
-            ID == 2570;     // Forbidden Reach (Dracthyr/Evoker Start)
+            ID == 2570);    // Forbidden Reach (Dracthyr/Evoker Start)
     }
 
     EnumFlag<MapFlags> GetFlags() const { return static_cast<MapFlags>(Flags[0]); }

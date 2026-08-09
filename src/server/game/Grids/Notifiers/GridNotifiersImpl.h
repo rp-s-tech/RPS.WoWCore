@@ -40,7 +40,7 @@ void Trinity::MessageDistDeliverer<PacketSender>::Visit(PlayerMapType& m) const
     for (PlayerMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Player* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
+        if (!target->CanSeeInPhaseContexts(i_source))
             continue;
 
         if ((!required3dDist ? target->GetExactDist2dSq(i_source) : target->GetExactDistSq(i_source)) > i_distSq)
@@ -66,7 +66,7 @@ void Trinity::MessageDistDeliverer<PacketSender>::Visit(CreatureMapType& m) cons
     for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Creature* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
+        if (!target->CanSeeInPhaseContexts(i_source))
             continue;
 
         if ((!required3dDist ? target->GetExactDist2dSq(i_source) : target->GetExactDistSq(i_source)) > i_distSq)
@@ -89,7 +89,7 @@ void Trinity::MessageDistDeliverer<PacketSender>::Visit(DynamicObjectMapType& m)
     for (DynamicObjectMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         DynamicObject* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
+        if (!target->CanSeeInPhaseContexts(i_source))
             continue;
 
         if ((!required3dDist ? target->GetExactDist2dSq(i_source) : target->GetExactDistSq(i_source)) > i_distSq)
@@ -111,7 +111,7 @@ void Trinity::MessageDistDelivererToHostile<PacketSender>::Visit(PlayerMapType& 
     for (PlayerMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Player* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
+        if (!target->CanSeeInPhaseContexts(i_source))
             continue;
 
         if (target->GetExactDist2dSq(i_source) > i_distSq)
@@ -137,7 +137,7 @@ void Trinity::MessageDistDelivererToHostile<PacketSender>::Visit(CreatureMapType
     for (CreatureMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         Creature* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
+        if (!target->CanSeeInPhaseContexts(i_source))
             continue;
 
         if (target->GetExactDist2dSq(i_source) > i_distSq)
@@ -160,7 +160,7 @@ void Trinity::MessageDistDelivererToHostile<PacketSender>::Visit(DynamicObjectMa
     for (DynamicObjectMapType::iterator iter = m.begin(); iter != m.end(); ++iter)
     {
         DynamicObject* target = iter->GetSource();
-        if (!target->InSamePhase(*i_phaseShift))
+        if (!target->CanSeeInPhaseContexts(i_source))
             continue;
 
         if (target->GetExactDist2dSq(i_source) > i_distSq)
@@ -190,6 +190,11 @@ inline void Trinity::WorldObjectSearcherBase<Check, Result, MapTypeMaskCheck>::V
     for (GridReference<T> const& ref : m)
     {
         if (!ref.GetSource()->InSamePhase(*i_phaseShift))
+            continue;
+
+        if (i_roleplaySource
+            && i_roleplayPolicy == RoleplaySearchContextPolicy::SameContext
+            && !i_roleplaySource->CanShareRoleplayContext(ref.GetSource()))
             continue;
 
         if (i_check(ref.GetSource()))

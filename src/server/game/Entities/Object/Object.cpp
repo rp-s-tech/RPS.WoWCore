@@ -40,6 +40,7 @@
 #include "PhasingHandler.h"
 #include "Player.h"
 #include "ReputationMgr.h"
+#include "RoleplayVisibilityContext.h"
 #include "SmoothPhasing.h"
 #include "Spell.h"
 #include "SpellAuraEffects.h"
@@ -494,7 +495,17 @@ bool WorldObject::IsWithinDist(WorldObject const* obj, float dist2compare, bool 
 
 bool WorldObject::IsWithinDistInMap(WorldObject const* obj, float dist2compare, bool is3D /*= true*/, bool incOwnRadius /*= true*/, bool incTargetRadius /*= true*/) const
 {
-    return obj && IsInMap(obj) && InSamePhase(obj) && _IsWithinDist(obj, dist2compare, is3D, incOwnRadius, incTargetRadius);
+    return obj && IsInMap(obj) && CanSeeInPhaseContexts(obj) && _IsWithinDist(obj, dist2compare, is3D, incOwnRadius, incTargetRadius);
+}
+
+bool WorldObject::CanShareRoleplayContext(WorldObject const* obj) const
+{
+    return obj && RoleplayVisibilityContext::CanShare(*this, *obj);
+}
+
+bool WorldObject::CanSeeInPhaseContexts(WorldObject const* obj, bool ignoreNative /*= false*/) const
+{
+    return obj && RoleplayVisibilityContext::CanSeeInPhaseContexts(*this, *obj, ignoreNative);
 }
 
 Position WorldObject::GetHitSpherePointFor(Position const& dest) const
@@ -962,7 +973,8 @@ bool WorldObject::CanSeeOrDetect(WorldObject const* obj, CanSeeOrDetectExtraArgs
 
 bool WorldObject::CanNeverSee(WorldObject const* obj, bool ignorePhaseShift /*= false*/) const
 {
-    return GetMap() != obj->GetMap() || (!ignorePhaseShift && !InSamePhase(obj));
+    // Different map OR logical mismatch OR (unless ignored) native PhaseShift mismatch.
+    return GetMap() != obj->GetMap() || !CanSeeInPhaseContexts(obj, ignorePhaseShift);
 }
 
 bool WorldObject::CanDetect(WorldObject const* obj, bool implicitDetect, bool checkAlert) const
@@ -2354,6 +2366,10 @@ bool WorldObject::IsValidAttackTarget(WorldObject const* target, SpellInfo const
 {
     ASSERT(target);
 
+    // Phase-ignoring spells must still respect exclusive RP contexts.
+    if (!CanShareRoleplayContext(target))
+        return false;
+
     // some positive spells can be casted at hostile target
     bool isPositiveSpell = bySpell && bySpell->IsPositive();
 
@@ -2511,6 +2527,10 @@ bool WorldObject::IsValidAttackTarget(WorldObject const* target, SpellInfo const
 bool WorldObject::IsValidAssistTarget(WorldObject const* target, SpellInfo const* bySpell /*= nullptr*/) const
 {
     ASSERT(target);
+
+    // Phase-ignoring spells must still respect exclusive RP contexts.
+    if (!CanShareRoleplayContext(target))
+        return false;
 
     // some negative spells can be casted at friendly target
     bool isNegativeSpell = bySpell && !bySpell->IsPositive();

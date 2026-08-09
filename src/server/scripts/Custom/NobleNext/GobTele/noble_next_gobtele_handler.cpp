@@ -12,6 +12,7 @@
 #include "ObjectMgr.h"
 #include "PhasingHandler.h"
 #include "Player.h"
+#include "RoleplayPhaseMgr.h"
 #include "ScriptMgr.h"
 #include "WorldDatabase.h"
 
@@ -55,7 +56,8 @@ namespace RoleplayCore::NobleNext
 
         QueryResult result = WorldDatabase.Query(
             "SELECT DISTINCT g.entry FROM gameobject_teleport g "
-            "WHERE EXISTS (SELECT 1 FROM gameobject_template gt WHERE gt.entry = g.entry)");
+            "WHERE g.map <> 2783 "
+            "AND EXISTS (SELECT 1 FROM gameobject_template gt WHERE gt.entry = g.entry)");
 
         if (!result)
             return;
@@ -73,7 +75,7 @@ namespace RoleplayCore::NobleNext
             return false;
 
         QueryResult result = WorldDatabase.PQuery(
-            "SELECT map, position_x, position_y, position_z, orientation, phase "
+            "SELECT map, position_x, position_y, position_z, orientation, phase, server_phase_id "
             "FROM gameobject_teleport WHERE guid = {}", goGuidLow);
 
         if (!result)
@@ -86,6 +88,25 @@ namespace RoleplayCore::NobleNext
         float z = fields[3].GetFloat();
         float o = fields[4].GetFloat();
         uint32 phase = fields[5].GetUInt32();
+        Optional<uint64> serverPhaseId;
+        if (!fields[6].IsNull())
+            serverPhaseId = fields[6].GetUInt64();
+
+        if (mapId == HousingMapId)
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "Общий GobTele не обслуживает Housing Map 2783: нужен PrivateHome record.");
+            return false;
+        }
+
+        // Validate ACL and persist the logical context before moving the player.
+        // A failed transition deliberately leaves the player at the source location.
+        if (serverPhaseId && !sRoleplayPhaseMgr.TransitionPlayer(player, *serverPhaseId, mapId))
+        {
+            ChatHandler(player->GetSession()).SendSysMessage(
+                "Телепорт отклонён: logical RP phase destination недоступна для персонажа.");
+            return false;
+        }
 
         player->TeleportTo(mapId, x, y, z, o);
         if (phase)
@@ -112,6 +133,11 @@ namespace RoleplayCore::NobleNext
         float o = player->GetOrientation();
         uint32 mapId = player->GetMapId();
         uint32 accountId = player->GetSession()->GetAccountId();
+        uint64 const serverPhaseId = sRoleplayPhaseMgr.GetPlayerPhaseId(player->GetGUID().GetCounter(), mapId);
+        std::string const serverPhaseSql = serverPhaseId ? fmt::format("{}", serverPhaseId) : "NULL";
+
+        if (mapId == HousingMapId)
+            return false;
 
         QueryResult exists = WorldDatabase.PQuery(
             "SELECT 1 FROM gameobject_teleport WHERE guid = {} LIMIT 1", goGuidLow);
@@ -120,16 +146,16 @@ namespace RoleplayCore::NobleNext
         {
             WorldDatabase.PExecute(
                 "UPDATE gameobject_teleport SET map = {}, position_x = {}, position_y = {}, "
-                "position_z = {}, orientation = {}, user = {}, phase = 0 WHERE guid = {}",
-                mapId, x, y, z, o, accountId, goGuidLow);
+                "position_z = {}, orientation = {}, user = {}, phase = 0, server_phase_id = {} WHERE guid = {}",
+                mapId, x, y, z, o, accountId, serverPhaseSql, goGuidLow);
             ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Телепорт для объекта {} ОБНОВЛЁН.", goGuidLow));
         }
         else
         {
             WorldDatabase.PExecute(
                 "INSERT INTO gameobject_teleport (guid, entry, map, position_x, position_y, position_z, "
-                "orientation, user, phase) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, 0)",
-                goGuidLow, entry, mapId, x, y, z, o, accountId);
+                "orientation, user, phase, server_phase_id) VALUES ({}, {}, {}, {}, {}, {}, {}, {}, 0, {})",
+                goGuidLow, entry, mapId, x, y, z, o, accountId, serverPhaseSql);
             ChatHandler(player->GetSession()).SendSysMessage(fmt::format("Телепорт для объекта {} СОЗДАН.", goGuidLow));
         }
 

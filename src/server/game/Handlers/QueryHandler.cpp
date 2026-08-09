@@ -24,6 +24,7 @@
 #include "Item.h"
 #include "Log.h"
 #include "Map.h"
+#include "MapManager.h"
 #include "NPCHandler.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -149,15 +150,25 @@ void WorldSession::HandleQueryCorpseLocation(WorldPackets::Query::QueryCorpseLoc
         // search entrance map for proper show entrance
         if (MapEntry const* corpseMapEntry = sMapStore.LookupEntry(mapID))
         {
-            if (corpseMapEntry->IsDungeon() && corpseMapEntry->CorpseMapID >= 0)
+            // Converted dungeon, raid, and scenario maps are MAP_COMMON after the
+            // Map.db2 hotfix. Preserve their CorpseMapID entrance behavior without
+            // re-entering the instance/lock pipeline.
+            if ((corpseMapEntry->IsDungeon() || corpseMapEntry->IsWorldMap()) &&
+                corpseMapEntry->CorpseMapID >= 0 &&
+                MapManager::IsValidMapCoord(corpseMapEntry->CorpseMapID, corpseMapEntry->Corpse.X, corpseMapEntry->Corpse.Y))
             {
                 // if corpse map have entrance
                 if (std::shared_ptr<TerrainInfo> entranceTerrain = sTerrainMgr.LoadTerrain(corpseMapEntry->CorpseMapID))
                 {
-                    mapID = corpseMapEntry->CorpseMapID;
-                    x = corpseMapEntry->Corpse.X;
-                    y = corpseMapEntry->Corpse.Y;
-                    z = entranceTerrain->GetStaticHeight(player->GetPhaseShift(), mapID, x, y, MAX_HEIGHT);
+                    float entranceZ = entranceTerrain->GetStaticHeight(player->GetPhaseShift(), corpseMapEntry->CorpseMapID,
+                        corpseMapEntry->Corpse.X, corpseMapEntry->Corpse.Y, MAX_HEIGHT);
+                    if (entranceZ > INVALID_HEIGHT)
+                    {
+                        mapID = corpseMapEntry->CorpseMapID;
+                        x = corpseMapEntry->Corpse.X;
+                        y = corpseMapEntry->Corpse.Y;
+                        z = entranceZ;
+                    }
                 }
             }
         }

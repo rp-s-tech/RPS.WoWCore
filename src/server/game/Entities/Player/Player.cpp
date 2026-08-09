@@ -106,6 +106,7 @@
 #include "PerksProgramMgr.h"
 #include "PetitionMgr.h"
 #include "PhasingHandler.h"
+#include "RoleplayTerrainPresetService.h"
 #include "PlayerChoice.h"
 #include "QueryCallback.h"
 #include "QueryHolder.h"
@@ -1566,6 +1567,8 @@ void Player::AddToWorld()
 
 void Player::RemoveFromWorld()
 {
+    sRoleplayTerrainPresetService.Forget(this);
+
     // cleanup
     if (IsInWorld())
     {
@@ -1870,7 +1873,7 @@ bool Player::CanInteractWithQuestGiver(Object* questGiver) const
         case TYPEID_GAMEOBJECT:
             return GetGameObjectIfCanInteractWith(questGiver->GetGUID(), GAMEOBJECT_TYPE_QUESTGIVER) != nullptr;
         case TYPEID_PLAYER:
-            return IsAlive() && questGiver->ToPlayer()->IsAlive();
+            return IsAlive() && questGiver->ToPlayer()->IsAlive() && CanSeeInPhaseContexts(questGiver->ToPlayer());
         case TYPEID_ITEM:
             return IsAlive();
         default:
@@ -19030,6 +19033,16 @@ bool Player::LoadFromDB(ObjectGuid guid, CharacterDatabaseQueryHolder const& hol
     MapEntry const* mapEntry = sMapStore.LookupEntry(mapId);
     Map* map = nullptr;
     bool player_at_bg = false;
+
+    // Login instance-id truth table: MAP_COMMON discards a stale saved id and uses key 0;
+    // garrison regenerates its owner key, while dungeon, raid, scenario, battleground, and arena keep their instance id.
+    if (mapEntry && !mapEntry->Instanceable() && instanceId)
+    {
+        TC_LOG_DEBUG("entities.player.loading", "Player::LoadFromDB: Resetting stale instance id {} for non-instanceable map {} on player {}.",
+            instanceId, mapId, guid.ToString());
+        instanceId = 0;
+    }
+
     if (!mapEntry || !IsPositionValid())
     {
         TC_LOG_ERROR("entities.player.loading", "Player::LoadFromDB: Player ({}) has invalid coordinates (MapId: {} X: {} Y: {} Z: {} O: {}). Teleport to default race/class locations.",
@@ -25751,7 +25764,8 @@ Unit* Player::GetSelectedUnit() const
 {
     ObjectGuid selectionGUID = GetTarget();
     if (!selectionGUID.IsEmpty())
-        return ObjectAccessor::GetUnit(*this, selectionGUID);
+        if (Unit* unit = ObjectAccessor::GetUnit(*this, selectionGUID); unit && CanSeeInPhaseContexts(unit))
+            return unit;
     return nullptr;
 }
 
@@ -25759,7 +25773,8 @@ Player* Player::GetSelectedPlayer() const
 {
     ObjectGuid selectionGUID = GetTarget();
     if (!selectionGUID.IsEmpty())
-        return ObjectAccessor::FindConnectedPlayer(selectionGUID);
+        if (Player* player = ObjectAccessor::FindConnectedPlayer(selectionGUID); player && CanSeeInPhaseContexts(player))
+            return player;
     return nullptr;
 }
 
@@ -26010,6 +26025,7 @@ void Player::SendInitialPacketsAfterAddToMap()
     SendItemPassives();                                     // must be after add to map
 
     PhasingHandler::OnMapChange(this);
+    sRoleplayTerrainPresetService.OnMapChange(this);
 
     if (_garrison)
         _garrison->SendRemoteInfo();

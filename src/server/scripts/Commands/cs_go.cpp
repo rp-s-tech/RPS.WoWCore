@@ -32,12 +32,14 @@ EndScriptData */
 #include "ObjectMgr.h"
 #include "PhasingHandler.h"
 #include "Player.h"
+#include "RoleplayCommandPhaseGuard.h"
 #include "RolePlay.h"
 #include "RBAC.h"
 #include "SupportMgr.h"
 #include "TerrainMgr.h"
 #include "Transport.h"
 #include "Util.h"
+#include <limits>
 #include "WorldSession.h"
 
 using namespace Trinity::ChatCommands;
@@ -111,23 +113,38 @@ public:
             return false;
         }
 
+        Player* player = handler->GetSession()->GetPlayer();
+        RoleplayCommandPhaseGuard::SpawnContext const ctx = RoleplayCommandPhaseGuard::Resolve(
+            player, RoleplayPhaseSpawnType::Creature, *spawnId);
+        if (ctx.CrossPhase)
+            return RoleplayCommandPhaseGuard::DenyCrossPhase(handler, ctx, "Телепорт к spawn другой phase запрещён.");
+
         return DoTeleport(handler, spawnpoint->spawnPoint, spawnpoint->mapId);
     }
 
     static bool HandleGoCreatureCIdCommand(ChatHandler* handler, Variant<Hyperlink<creature_entry>, uint32> cId)
     {
+        Player* player = handler->GetSession()->GetPlayer();
         CreatureData const* spawnpoint = nullptr;
+        float bestDistance = std::numeric_limits<float>::max();
         for (auto const& pair : sObjectMgr->GetAllCreatureData())
         {
             if (pair.second.id != *cId)
                 continue;
 
-            if (!spawnpoint)
-                spawnpoint = &pair.second;
-            else
+            RoleplayCommandPhaseGuard::SpawnContext const ctx = RoleplayCommandPhaseGuard::Resolve(
+                player, RoleplayPhaseSpawnType::Creature, pair.second.spawnId);
+            if (!RoleplayCommandPhaseGuard::AllowsViewerSpawnContext(ctx, false))
+                continue;
+
+            float distance = player->GetExactDist2d(pair.second.spawnPoint);
+            if (pair.second.mapId == player->GetMapId())
+                distance *= 0.001f;
+
+            if (distance < bestDistance)
             {
-                handler->SendSysMessage(LANG_COMMAND_GOCREATMULTIPLE);
-                break;
+                bestDistance = distance;
+                spawnpoint = &pair.second;
             }
         }
 
@@ -151,23 +168,38 @@ public:
             return false;
         }
 
+        Player* player = handler->GetSession()->GetPlayer();
+        RoleplayCommandPhaseGuard::SpawnContext const ctx = RoleplayCommandPhaseGuard::Resolve(
+            player, RoleplayPhaseSpawnType::GameObject, *spawnId);
+        if (ctx.CrossPhase)
+            return RoleplayCommandPhaseGuard::DenyCrossPhase(handler, ctx, "Телепорт к spawn другой phase запрещён.");
+
         return DoTeleport(handler, spawnpoint->spawnPoint, spawnpoint->mapId);
     }
 
     static bool HandleGoGameObjectGOIdCommand(ChatHandler* handler, Variant<Hyperlink<gameobject_entry>, uint32> goId)
     {
+        Player* player = handler->GetSession()->GetPlayer();
         GameObjectData const* spawnpoint = nullptr;
+        float bestDistance = std::numeric_limits<float>::max();
         for (auto const& pair : sObjectMgr->GetAllGameObjectData())
         {
             if (pair.second.id != *goId)
                 continue;
 
-            if (!spawnpoint)
-                spawnpoint = &pair.second;
-            else
+            RoleplayCommandPhaseGuard::SpawnContext const ctx = RoleplayCommandPhaseGuard::Resolve(
+                player, RoleplayPhaseSpawnType::GameObject, pair.second.spawnId);
+            if (!RoleplayCommandPhaseGuard::AllowsViewerSpawnContext(ctx, false))
+                continue;
+
+            float distance = player->GetExactDist2d(pair.second.spawnPoint);
+            if (pair.second.mapId == player->GetMapId())
+                distance *= 0.001f;
+
+            if (distance < bestDistance)
             {
-                handler->SendSysMessage(LANG_COMMAND_GOCREATMULTIPLE);
-                break;
+                bestDistance = distance;
+                spawnpoint = &pair.second;
             }
         }
 

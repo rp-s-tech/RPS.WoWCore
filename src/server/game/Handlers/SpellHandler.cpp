@@ -466,7 +466,7 @@ void WorldSession::HandleSpellClick(WorldPackets::Spells::SpellClick& spellClick
         return;
 
     /// @todo Unit::SetCharmedBy: 28782 is not in world but 0 is trying to charm it! -> crash
-    if (!unit->IsInWorld())
+    if (!unit->IsInWorld() || !_player->CanSeeInPhaseContexts(unit))
         return;
 
     unit->HandleSpellClick(_player);

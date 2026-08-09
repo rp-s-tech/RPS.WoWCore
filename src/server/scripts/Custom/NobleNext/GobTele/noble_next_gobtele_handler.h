@@ -14,6 +14,8 @@ namespace RoleplayCore::NobleNext
     class GobTeleHandler
     {
     public:
+        static constexpr uint32 HousingMapId = 2783;
+
         static GobTeleHandler& Instance();
 
         void LoadGossipEntries();

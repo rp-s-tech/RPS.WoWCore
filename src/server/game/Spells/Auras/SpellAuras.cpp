@@ -2606,7 +2606,7 @@ void UnitAura::FillTargetMap(std::unordered_map<Unit*, uint32>& targets, Unit* c
             case SPELL_EFFECT_APPLY_AREA_AURA_OWNER:
             {
                 if (Unit* owner = unitOwner->GetCharmerOrOwner())
-                    if (owner->IsInWorld() && unitOwner->InSamePhase(owner) && unitOwner->IsInRange3d(owner, radius.Min, radius.Max))
+                    if (owner->IsInWorld() && unitOwner->CanSeeInPhaseContexts(owner) && unitOwner->IsInRange3d(owner, radius.Min, radius.Max))
                         if (!condList || sConditionMgr->IsObjectMeetToConditions(owner, ref, *condList))
                             units.push_back(owner);
                 break;

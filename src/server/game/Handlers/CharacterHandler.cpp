@@ -59,6 +59,7 @@
 #include "RealmList.h"
 #include "ReputationMgr.h"
 #include "RBAC.h"
+#include "RoleplayPhaseMgr.h"
 #include "ScriptMgr.h"
 #include "SocialMgr.h"
 #include "StringConvert.h"
@@ -1426,6 +1427,12 @@ void WorldSession::HandlePlayerLogin(LoginQueryHolder const& holder)
     SendAuctionFavoriteList();
 
     pCurrChar->GetSession()->GetBattlePetMgr()->SendJournalLockStatus();
+
+    // Logical RP context must be valid and published before any map visibility
+    // initialization in Map::AddPlayerToMap.
+    if (!sRoleplayPhaseMgr.RestorePlayerContext(pCurrChar))
+        TC_LOG_ERROR("roleplay.phase", "RP phase context restore failed for player {} during login; keeping the current snapshot context.",
+            pCurrChar->GetGUID().ToString());
 
     pCurrChar->SendInitialPacketsBeforeAddToMap();
 

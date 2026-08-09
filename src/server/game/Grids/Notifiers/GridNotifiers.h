@@ -33,6 +33,15 @@
 
 namespace Trinity
 {
+    // Object-aware searchers keep a WorldObject source for logical RP context.
+    // PhaseShift-only constructors leave i_roleplaySource = nullptr (native-only).
+    // IgnorePhases swaps only i_phaseShift; logical source stays with the searcher.
+    enum class RoleplaySearchContextPolicy : uint8
+    {
+        SameContext = 0,
+        IgnoreRoleplayContext = 1
+    };
+
     template<typename ObjectType>
     struct GridMapTypeMaskForType : std::integral_constant<GridMapTypeMask, GridMapTypeMask(0)> { };
 
@@ -173,13 +182,12 @@ namespace Trinity
     {
         WorldObject const* i_source;
         PacketSender& i_packetSender;
-        PhaseShift const* i_phaseShift;
         float i_distSq;
         Team team;
         Player const* skipped_receiver;
         bool required3dDist;
         MessageDistDeliverer(WorldObject const* src, PacketSender& packetSender, float dist, bool own_team_only = false, Player const* skipped = nullptr, bool req3dDist = false)
-            : i_source(src), i_packetSender(packetSender), i_phaseShift(&src->GetPhaseShift()), i_distSq(dist * dist)
+            : i_source(src), i_packetSender(packetSender), i_distSq(dist * dist)
             , team(TEAM_OTHER)
             , skipped_receiver(skipped)
             , required3dDist(req3dDist)
@@ -212,11 +220,10 @@ namespace Trinity
     {
         Unit* i_source;
         PacketSender& i_packetSender;
-        PhaseShift const* i_phaseShift;
         float i_distSq;
 
         MessageDistDelivererToHostile(Unit* src, PacketSender& packetSender, float dist)
-            : i_source(src), i_packetSender(packetSender), i_phaseShift(&src->GetPhaseShift()), i_distSq(dist * dist)
+            : i_source(src), i_packetSender(packetSender), i_distSq(dist * dist)
         {
         }
 
@@ -354,6 +361,8 @@ namespace Trinity
     {
         MapTypeMaskCheck i_mapTypeMask;
         PhaseShift const* i_phaseShift;
+        WorldObject const* i_roleplaySource;
+        RoleplaySearchContextPolicy i_roleplayPolicy;
         Check& i_check;
 
         template<class T>
@@ -373,8 +382,16 @@ namespace Trinity
 
     protected:
         template<typename Container>
-        WorldObjectSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : Result(result), i_mapTypeMask(mapTypeMask), i_phaseShift(&phaseShift), i_check(check) { }
+        WorldObjectSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL,
+            WorldObject const* roleplaySource = nullptr,
+            RoleplaySearchContextPolicy roleplayPolicy = RoleplaySearchContextPolicy::SameContext)
+            : Result(result), i_mapTypeMask(mapTypeMask), i_phaseShift(&phaseShift), i_roleplaySource(roleplaySource),
+              i_roleplayPolicy(roleplayPolicy), i_check(check) { }
+
+        template<typename Container>
+        WorldObjectSearcherBase(WorldObject const* searcher, Container& result, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL,
+            RoleplaySearchContextPolicy roleplayPolicy = RoleplaySearchContextPolicy::SameContext)
+            : WorldObjectSearcherBase(searcher->GetPhaseShift(), result, check, mapTypeMask, searcher, roleplayPolicy) { }
 
     private:
         template<class T>
@@ -386,6 +403,8 @@ namespace Trinity
     {
         MapTypeMaskCheck i_mapTypeMask;
         PhaseShift const* i_phaseShift;
+        WorldObject const* i_roleplaySource;
+        RoleplaySearchContextPolicy i_roleplayPolicy;
         Work& i_work;
 
         template<class T>
@@ -404,16 +423,30 @@ namespace Trinity
         }
 
     protected:
-        WorldObjectWorkerBase(PhaseShift const& phaseShift, Work& work, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : i_mapTypeMask(mapTypeMask), i_phaseShift(&phaseShift), i_work(work) { }
+        WorldObjectWorkerBase(PhaseShift const& phaseShift, Work& work, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL,
+            WorldObject const* roleplaySource = nullptr,
+            RoleplaySearchContextPolicy roleplayPolicy = RoleplaySearchContextPolicy::SameContext)
+            : i_mapTypeMask(mapTypeMask), i_phaseShift(&phaseShift), i_roleplaySource(roleplaySource),
+              i_roleplayPolicy(roleplayPolicy), i_work(work) { }
+
+        WorldObjectWorkerBase(WorldObject const* searcher, Work& work, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL,
+            RoleplaySearchContextPolicy roleplayPolicy = RoleplaySearchContextPolicy::SameContext)
+            : WorldObjectWorkerBase(searcher->GetPhaseShift(), work, mapTypeMask, searcher, roleplayPolicy) { }
 
     private:
         template<class T>
         inline void VisitImpl(GridRefManager<T> const& m)
         {
             for (GridReference<T> const& ref : m)
-                if (ref.GetSource()->InSamePhase(*i_phaseShift))
-                    this->i_work(ref.GetSource());
+            {
+                if (!ref.GetSource()->InSamePhase(*i_phaseShift))
+                    continue;
+                if (i_roleplaySource
+                    && i_roleplayPolicy == RoleplaySearchContextPolicy::SameContext
+                    && !i_roleplaySource->CanShareRoleplayContext(ref.GetSource()))
+                    continue;
+                this->i_work(ref.GetSource());
+            }
         }
     };
 
@@ -424,7 +457,7 @@ namespace Trinity
             : WorldObjectSearcherBase<Check, SearcherFirstObjectResult<WorldObject*>>(phaseShift, result, check, mapTypeMask) { }
 
         WorldObjectSearcher(WorldObject const* searcher, WorldObject*& result, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : WorldObjectSearcher(searcher->GetPhaseShift(), result, check, mapTypeMask) { }
+            : WorldObjectSearcherBase<Check, SearcherFirstObjectResult<WorldObject*>>(searcher, result, check, mapTypeMask) { }
     };
 
     template<class Check>
@@ -434,7 +467,7 @@ namespace Trinity
             : WorldObjectSearcherBase<Check, SearcherLastObjectResult<WorldObject*>>(phaseShift, result, check, mapTypeMask) { }
 
         WorldObjectLastSearcher(WorldObject const* searcher, WorldObject*& result, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : WorldObjectLastSearcher(searcher->GetPhaseShift(), result, check, mapTypeMask) { }
+            : WorldObjectSearcherBase<Check, SearcherLastObjectResult<WorldObject*>>(searcher, result, check, mapTypeMask) { }
     };
 
     template<class Check>
@@ -446,7 +479,7 @@ namespace Trinity
 
         template<typename Container>
         WorldObjectListSearcher(WorldObject const* searcher, Container& container, Check& check, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : WorldObjectListSearcher(searcher->GetPhaseShift(), container, check, mapTypeMask) { }
+            : WorldObjectSearcherBase<Check, SearcherContainerResult<WorldObject*>>(searcher, container, check, mapTypeMask) { }
     };
 
     template<class Check, typename Container>
@@ -462,7 +495,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work>(phaseShift, work, mapTypeMask) { }
 
         WorldObjectWorker(WorldObject const* searcher, Work& work, uint32 mapTypeMask = GRID_MAP_TYPE_MASK_ALL)
-            : WorldObjectWorker(searcher->GetPhaseShift(), work, mapTypeMask) { }
+            : WorldObjectWorkerBase<Work>(searcher, work, mapTypeMask) { }
     };
 
     // Gameobject searchers
@@ -473,6 +506,10 @@ namespace Trinity
         template<typename Container>
         GameObjectSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check)
             : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_GAMEOBJECT>>(phaseShift, result, check) { }
+
+        template<typename Container>
+        GameObjectSearcherBase(WorldObject const* searcher, Container& result, Check& check)
+            : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_GAMEOBJECT>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -482,7 +519,7 @@ namespace Trinity
             : GameObjectSearcherBase<Check, SearcherFirstObjectResult<GameObject*>>(phaseShift, result, check) { }
 
         GameObjectSearcher(WorldObject const* searcher, GameObject*& result, Check& check)
-            : GameObjectSearcher(searcher->GetPhaseShift(), result, check) { }
+            : GameObjectSearcherBase<Check, SearcherFirstObjectResult<GameObject*>>(searcher, result, check) { }
     };
 
     // Last accepted by Check GO if any (Check can change requirements at each call)
@@ -493,7 +530,7 @@ namespace Trinity
             : GameObjectSearcherBase<Check, SearcherLastObjectResult<GameObject*>>(phaseShift, result, check) { }
 
         GameObjectLastSearcher(WorldObject const* searcher, GameObject*& result, Check& check)
-            : GameObjectLastSearcher(searcher->GetPhaseShift(), result, check) { }
+            : GameObjectSearcherBase<Check, SearcherLastObjectResult<GameObject*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -505,7 +542,7 @@ namespace Trinity
 
         template<typename Container>
         GameObjectListSearcher(WorldObject const* searcher, Container& container, Check& check)
-            : GameObjectListSearcher(searcher->GetPhaseShift(), container, check) { }
+            : GameObjectSearcherBase<Check, SearcherContainerResult<GameObject*>>(searcher, container, check) { }
     };
 
     template<class Check, typename Container>
@@ -521,7 +558,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_GAMEOBJECT>>(phaseShift, work) { }
 
         GameObjectWorker(WorldObject const* searcher, Work& work)
-            : GameObjectWorker(searcher->GetPhaseShift(), work) { }
+            : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_GAMEOBJECT>>(searcher, work) { }
     };
 
     // Unit searchers
@@ -532,6 +569,10 @@ namespace Trinity
         template<typename Container>
         UnitSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check)
             : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE | GRID_MAP_TYPE_MASK_PLAYER>>(phaseShift, result, check) { }
+
+        template<typename Container>
+        UnitSearcherBase(WorldObject const* searcher, Container& result, Check& check)
+            : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE | GRID_MAP_TYPE_MASK_PLAYER>>(searcher, result, check) { }
     };
 
     // First accepted by Check Unit if any
@@ -542,7 +583,7 @@ namespace Trinity
             : UnitSearcherBase<Check, SearcherFirstObjectResult<Unit*>>(phaseShift, result, check) { }
 
         UnitSearcher(WorldObject const* searcher, Unit*& result, Check& check)
-            : UnitSearcher(searcher->GetPhaseShift(), result, check) { }
+            : UnitSearcherBase<Check, SearcherFirstObjectResult<Unit*>>(searcher, result, check) { }
     };
 
     // Last accepted by Check Unit if any (Check can change requirements at each call)
@@ -553,7 +594,7 @@ namespace Trinity
             : UnitSearcherBase<Check, SearcherLastObjectResult<Unit*>>(phaseShift, result, check) { }
 
         UnitLastSearcher(WorldObject const* searcher, Unit*& result, Check& check)
-            : UnitLastSearcher(searcher->GetPhaseShift(), result, check) { }
+            : UnitSearcherBase<Check, SearcherLastObjectResult<Unit*>>(searcher, result, check) { }
     };
 
     // All accepted by Check units if any
@@ -566,7 +607,7 @@ namespace Trinity
 
         template<typename Container>
         UnitListSearcher(WorldObject const* searcher, Container& container, Check& check)
-            : UnitListSearcher(searcher->GetPhaseShift(), container, check) { }
+            : UnitSearcherBase<Check, SearcherContainerResult<Unit*>>(searcher, container, check) { }
     };
 
     template<class Work>
@@ -576,7 +617,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE | GRID_MAP_TYPE_MASK_PLAYER>>(phaseShift, work) { }
 
         UnitWorker(WorldObject const* searcher, Work& work)
-            : UnitWorker(searcher->GetPhaseShift(), work) { }
+            : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE | GRID_MAP_TYPE_MASK_PLAYER>>(searcher, work) { }
     };
 
     // Creature searchers
@@ -587,6 +628,10 @@ namespace Trinity
         template<typename Container>
         CreatureSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check)
             : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE>>(phaseShift, result, check) { }
+
+        template<typename Container>
+        CreatureSearcherBase(WorldObject const* searcher, Container& result, Check& check)
+            : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -596,7 +641,7 @@ namespace Trinity
             : CreatureSearcherBase<Check, SearcherFirstObjectResult<Creature*>>(phaseShift, result, check) { }
 
         CreatureSearcher(WorldObject const* searcher, Creature*& result, Check& check)
-            : CreatureSearcher(searcher->GetPhaseShift(), result, check) { }
+            : CreatureSearcherBase<Check, SearcherFirstObjectResult<Creature*>>(searcher, result, check) { }
     };
 
     // Last accepted by Check Creature if any (Check can change requirements at each call)
@@ -607,7 +652,7 @@ namespace Trinity
             : CreatureSearcherBase<Check, SearcherLastObjectResult<Creature*>>(phaseShift, result, check) { }
 
         CreatureLastSearcher(WorldObject const* searcher, Creature*& result, Check& check)
-            : CreatureLastSearcher(searcher->GetPhaseShift(), result, check) { }
+            : CreatureSearcherBase<Check, SearcherLastObjectResult<Creature*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -619,7 +664,7 @@ namespace Trinity
 
         template<typename Container>
         CreatureListSearcher(WorldObject const* searcher, Container& container, Check & check)
-            : CreatureListSearcher(searcher->GetPhaseShift(), container, check) { }
+            : CreatureSearcherBase<Check, SearcherContainerResult<Creature*>>(searcher, container, check) { }
     };
 
     template<class Work>
@@ -629,7 +674,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE>>(phaseShift, work) { }
 
         CreatureWorker(WorldObject const* searcher, Work& work)
-            : CreatureWorker(searcher->GetPhaseShift(), work) { }
+            : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CREATURE>>(searcher, work) { }
     };
 
     // Player searchers
@@ -640,6 +685,10 @@ namespace Trinity
         template<typename Container>
         PlayerSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check)
             : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_PLAYER>>(phaseShift, result, check) { }
+
+        template<typename Container>
+        PlayerSearcherBase(WorldObject const* searcher, Container& result, Check& check)
+            : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_PLAYER>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -649,7 +698,7 @@ namespace Trinity
             : PlayerSearcherBase<Check, SearcherFirstObjectResult<Player*>>(phaseShift, result, check) { }
 
         PlayerSearcher(WorldObject const* searcher, Player*& result, Check& check)
-            : PlayerSearcher(searcher->GetPhaseShift(), result, check) { }
+            : PlayerSearcherBase<Check, SearcherFirstObjectResult<Player*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -659,7 +708,7 @@ namespace Trinity
             : PlayerSearcherBase<Check, SearcherLastObjectResult<Player*>>(phaseShift, result, check) { }
 
         PlayerLastSearcher(WorldObject const* searcher, Player*& result, Check& check)
-            : PlayerLastSearcher(searcher->GetPhaseShift(), result, check) { }
+            : PlayerSearcherBase<Check, SearcherLastObjectResult<Player*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -671,7 +720,7 @@ namespace Trinity
 
         template<typename Container>
         PlayerListSearcher(WorldObject const* searcher, Container& container, Check& check)
-            : PlayerListSearcher(searcher->GetPhaseShift(), container, check) { }
+            : PlayerSearcherBase<Check, SearcherContainerResult<Player*>>(searcher, container, check) { }
     };
 
     template<class Work>
@@ -681,7 +730,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_PLAYER>>(phaseShift, work) { }
 
         PlayerWorker(WorldObject const* searcher, Work& work)
-            : PlayerWorker(searcher->GetPhaseShift(), work) { }
+            : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_PLAYER>>(searcher, work) { }
     };
 
     template<class Work>
@@ -697,7 +746,7 @@ namespace Trinity
         void Visit(PlayerMapType const& m) const
         {
             for (GridReference<Player> const& ref : m)
-                if (ref.GetSource()->InSamePhase(i_searcher) && ref.GetSource()->IsWithinDist(i_searcher, i_dist))
+                if (ref.GetSource()->CanSeeInPhaseContexts(i_searcher) && ref.GetSource()->IsWithinDist(i_searcher, i_dist))
                     i_work(ref.GetSource());
         }
 
@@ -711,6 +760,10 @@ namespace Trinity
         template<typename Container>
         AreaTriggerSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check)
             : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_AREATRIGGER>>(phaseShift, result, check) { }
+
+        template<typename Container>
+        AreaTriggerSearcherBase(WorldObject const* searcher, Container& result, Check& check)
+            : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_AREATRIGGER>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -720,7 +773,7 @@ namespace Trinity
             : AreaTriggerSearcherBase<Check, SearcherFirstObjectResult<AreaTrigger*>>(phaseShift, result, check) { }
 
         AreaTriggerSearcher(WorldObject const* searcher, AreaTrigger*& result, Check& check)
-            : AreaTriggerSearcher(searcher->GetPhaseShift(), result, check) { }
+            : AreaTriggerSearcherBase<Check, SearcherFirstObjectResult<AreaTrigger*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -730,7 +783,7 @@ namespace Trinity
             : AreaTriggerSearcherBase<Check, SearcherLastObjectResult<AreaTrigger*>>(phaseShift, result, check) { }
 
         AreaTriggerLastSearcher(WorldObject const* searcher, AreaTrigger*& result, Check& check)
-            : AreaTriggerLastSearcher(searcher->GetPhaseShift(), result, check) { }
+            : AreaTriggerSearcherBase<Check, SearcherLastObjectResult<AreaTrigger*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -742,7 +795,7 @@ namespace Trinity
 
         template<typename Container>
         AreaTriggerListSearcher(WorldObject const* searcher, Container& container, Check& check)
-            : AreaTriggerListSearcher(searcher->GetPhaseShift(), container, check) { }
+            : AreaTriggerSearcherBase<Check, SearcherContainerResult<AreaTrigger*>>(searcher, container, check) { }
     };
 
     template<class Work>
@@ -752,7 +805,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_AREATRIGGER>>(phaseShift, work) { }
 
         AreaTriggerWorker(WorldObject const* searcher, Work& work)
-            : AreaTriggerWorker(searcher->GetPhaseShift(), work) { }
+            : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_AREATRIGGER>>(searcher, work) { }
     };
 
     // SceneObject searchers
@@ -762,6 +815,10 @@ namespace Trinity
         template<typename Container>
         SceneObjectSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check)
             : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_SCENEOBJECT>>(phaseShift, result, check) { }
+
+        template<typename Container>
+        SceneObjectSearcherBase(WorldObject const* searcher, Container& result, Check& check)
+            : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_SCENEOBJECT>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -771,7 +828,7 @@ namespace Trinity
             : SceneObjectSearcherBase<Check, SearcherFirstObjectResult<SceneObject*>>(phaseShift, result, check) { }
 
         SceneObjectSearcher(WorldObject const* searcher, SceneObject*& result, Check& check)
-            : SceneObjectSearcher(searcher->GetPhaseShift(), result, check) { }
+            : SceneObjectSearcherBase<Check, SearcherFirstObjectResult<SceneObject*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -781,7 +838,7 @@ namespace Trinity
             : SceneObjectSearcherBase<Check, SearcherLastObjectResult<SceneObject*>>(phaseShift, result, check) { }
 
         SceneObjectLastSearcher(WorldObject const* searcher, SceneObject*& result, Check& check)
-            : SceneObjectLastSearcher(searcher->GetPhaseShift(), result, check) { }
+            : SceneObjectSearcherBase<Check, SearcherLastObjectResult<SceneObject*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -793,7 +850,7 @@ namespace Trinity
 
         template<typename Container>
         SceneObjectListSearcher(WorldObject const* searcher, Container& container, Check& check)
-            : SceneObjectListSearcher(searcher->GetPhaseShift(), container, check) { }
+            : SceneObjectSearcherBase<Check, SearcherContainerResult<SceneObject*>>(searcher, container, check) { }
     };
 
     template<class Work>
@@ -803,7 +860,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_SCENEOBJECT>>(phaseShift, work) { }
 
         SceneObjectWorker(WorldObject const* searcher, Work& work)
-            : SceneObjectWorker(searcher->GetPhaseShift(), work) { }
+            : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_SCENEOBJECT>>(searcher, work) { }
     };
 
     // Conversation searchers
@@ -813,6 +870,10 @@ namespace Trinity
         template<typename Container>
         ConversationSearcherBase(PhaseShift const& phaseShift, Container& result, Check& check)
             : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CONVERSATION>>(phaseShift, result, check) { }
+
+        template<typename Container>
+        ConversationSearcherBase(WorldObject const* searcher, Container& result, Check& check)
+            : WorldObjectSearcherBase<Check, Result, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CONVERSATION>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -822,7 +883,7 @@ namespace Trinity
             : ConversationSearcherBase<Check, SearcherFirstObjectResult<Conversation*>>(phaseShift, result, check) { }
 
         ConversationSearcher(WorldObject const* searcher, Conversation*& result, Check& check)
-            : ConversationSearcher(searcher->GetPhaseShift(), result, check) { }
+            : ConversationSearcherBase<Check, SearcherFirstObjectResult<Conversation*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -832,7 +893,7 @@ namespace Trinity
             : ConversationSearcherBase<Check, SearcherLastObjectResult<Conversation*>>(phaseShift, result, check) { }
 
         ConversationLastSearcher(WorldObject const* searcher, Conversation*& result, Check& check)
-            : ConversationLastSearcher(searcher->GetPhaseShift(), result, check) { }
+            : ConversationSearcherBase<Check, SearcherLastObjectResult<Conversation*>>(searcher, result, check) { }
     };
 
     template<class Check>
@@ -844,7 +905,7 @@ namespace Trinity
 
         template<typename Container>
         ConversationListSearcher(WorldObject const* searcher, Container& container, Check& check)
-            : ConversationListSearcher(searcher->GetPhaseShift(), container, check) { }
+            : ConversationSearcherBase<Check, SearcherContainerResult<Conversation*>>(searcher, container, check) { }
     };
 
     template<class Work>
@@ -854,7 +915,7 @@ namespace Trinity
             : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CONVERSATION>>(phaseShift, work) { }
 
         ConversationWorker(WorldObject const* searcher, Work& work)
-            : ConversationWorker(searcher->GetPhaseShift(), work) { }
+            : WorldObjectWorkerBase<Work, StaticGridMapTypeMaskCheck<GRID_MAP_TYPE_MASK_CONVERSATION>>(searcher, work) { }
     };
 
     // CHECKS && DO classes
@@ -1254,7 +1315,7 @@ namespace Trinity
                 if (i_incTargetRadius)
                     searchRadius += u->GetCombatReach();
 
-                if (!u->IsInMap(i_obj) || !u->InSamePhase(i_obj) || !u->IsWithinVerticalCylinder(*i_obj, searchRadius, searchRadius, true))
+                if (!u->IsInMap(i_obj) || !u->CanSeeInPhaseContexts(i_obj) || !u->IsWithinVerticalCylinder(*i_obj, searchRadius, searchRadius, true))
                     return false;
 
                 if (!i_funit->IsFriendlyTo(u))
@@ -1303,7 +1364,7 @@ namespace Trinity
                 if (i_incTargetRadius)
                     searchRadius += u->GetCombatReach();
 
-                return u->IsInMap(_source) && u->InSamePhase(_source) && u->IsWithinVerticalCylinder(*_source, searchRadius, searchRadius, true);
+                return u->IsInMap(_source) && u->CanSeeInPhaseContexts(_source) && u->IsWithinVerticalCylinder(*_source, searchRadius, searchRadius, true);
             }
 
         private:
@@ -1403,7 +1464,7 @@ namespace Trinity
                 if (i_incTargetRadius)
                     searchRadius += u->GetCombatReach();
 
-                return u->IsInMap(i_obj) && u->InSamePhase(i_obj) && u->IsWithinVerticalCylinder(*i_obj, searchRadius, searchRadius, true);
+                return u->IsInMap(i_obj) && u->CanSeeInPhaseContexts(i_obj) && u->IsWithinVerticalCylinder(*i_obj, searchRadius, searchRadius, true);
             }
 
         private:
@@ -1947,7 +2008,7 @@ namespace Trinity
 
             bool operator()(WorldObject* go) const
             {
-                return m_pObject->IsWithinDist(go, m_fRange, false) && m_pObject->InSamePhase(go);
+                return m_pObject->IsWithinDist(go, m_fRange, false) && m_pObject->CanSeeInPhaseContexts(go);
             }
 
         private:

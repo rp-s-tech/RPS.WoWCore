@@ -630,7 +630,7 @@ void Transport::TeleportPassengersAndHideTransport(uint32 newMapid)
 
         for (MapReference const& ref : GetMap()->GetPlayers())
         {
-            if (ref.GetSource()->GetTransport() != this && ref.GetSource()->InSamePhase(this))
+            if (ref.GetSource()->GetTransport() != this && ref.GetSource()->CanSeeInPhaseContexts(this))
             {
                 UpdateData data(GetMap()->GetId());
                 BuildCreateUpdateBlockForPlayer(&data, ref.GetSource());
@@ -694,7 +694,7 @@ void Transport::BuildUpdate(UpdateDataMapType& data_map)
     BuildUpdateChangesMask();
 
     for (MapReference const& playerReference : GetMap()->GetPlayers())
-        if (playerReference.GetSource()->InSamePhase(this))
+        if (playerReference.GetSource()->CanSeeInPhaseContexts(this))
             BuildFieldsUpdate(playerReference.GetSource(), data_map);
 
     ClearUpdateMask(true);

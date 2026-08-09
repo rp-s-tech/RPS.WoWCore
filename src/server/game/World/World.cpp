@@ -116,6 +116,7 @@
 #endif
 
 #include "RolePlay.h"
+#include "RoleplayPhaseMgr.h"
 
 #include <boost/algorithm/string.hpp>
 #include <zlib.h>
@@ -640,6 +641,7 @@ void World::LoadConfigSettings(bool reload)
         { .Name = "SkillChance.Milling"sv, .DefaultValue = false, .Index = CONFIG_SKILL_MILLING },
         { .Name = "ActivateWeather"sv, .DefaultValue = true, .Index = CONFIG_WEATHER },
         { .Name = "Event.Announce"sv, .DefaultValue = false, .Index = CONFIG_EVENT_ANNOUNCE },
+        { .Name = "Roleplay.GameEvents.Enabled"sv, .DefaultValue = false, .Index = CONFIG_ROLEPLAY_GAME_EVENTS_ENABLED },
         { .Name = "Quests.EnableQuestTracker"sv, .DefaultValue = false, .Index = CONFIG_QUEST_ENABLE_QUEST_TRACKER },
         { .Name = "Quests.IgnoreRaid"sv, .DefaultValue = false, .Index = CONFIG_QUEST_IGNORE_RAID },
         { .Name = "Quests.IgnoreAutoAccept"sv, .DefaultValue = false, .Index = CONFIG_QUEST_IGNORE_AUTO_ACCEPT },
@@ -1598,6 +1600,11 @@ bool World::SetInitialWorldSettings()
     TC_LOG_INFO("server.loading", "Loading Gameobject Data...");
     sObjectMgr->LoadGameObjects();
 
+    // Roleplay tables load before ObjectMgr. Validate and publish persistent phase
+    // mappings only after both creature and gameobject spawn stores are available.
+    TC_LOG_INFO("server.loading", "Validating RP phase persistent spawn mappings...");
+    sRoleplayPhaseMgr.Reload();
+
     TC_LOG_INFO("server.loading", "Loading Spawn Group Data...");
     sObjectMgr->LoadSpawnGroups();
 
@@ -1819,6 +1826,8 @@ bool World::SetInitialWorldSettings()
     // Load before guilds and arena teams
     TC_LOG_INFO("server.loading", "Loading character cache store...");
     sCharacterCache->LoadCharacterCacheStorage();
+    TC_LOG_INFO("server.loading", "Refreshing RP phase character contexts...");
+    sRoleplayPhaseMgr.Reload();
 
     ///- Load dynamic data tables from the database
     TC_LOG_INFO("server.loading", "Loading Auctions...");

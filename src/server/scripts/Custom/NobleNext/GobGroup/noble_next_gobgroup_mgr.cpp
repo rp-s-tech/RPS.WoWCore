@@ -15,6 +15,8 @@
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
 #include "Player.h"
+#include "RoleplayCommandPhaseGuard.h"
+#include "RoleplayPhaseMgr.h"
 #include "StringFormat.h"
 #include "Timer.h"
 #include "Util.h"
@@ -114,6 +116,26 @@ bool GobGroupMgr::IsUnsupportedGo(GameObjectData const* data, std::string& reaso
     return false;
 }
 
+uint64 GobGroupMgr::GetLogicalPhaseId(ObjectGuid::LowType spawnId)
+{
+    GameObjectData const* data = sObjectMgr->GetGameObjectData(spawnId);
+    return sRoleplayPhaseMgr.GetSpawnPhaseId(RoleplayPhaseSpawnType::GameObject, spawnId, data ? data->mapId : 0);
+}
+
+uint64 GobGroupMgr::GetViewerPhaseId(Player const* viewer)
+{
+    return viewer ? RoleplayCommandPhaseGuard::GetViewerPhaseId(viewer) : 0;
+}
+
+bool GobGroupMgr::IsVisibleInLogicalContext(Player const* viewer, ObjectGuid::LowType spawnId)
+{
+    if (!viewer)
+        return true;
+
+    return RoleplayCommandPhaseGuard::AllowsViewerSpawnContext(
+        RoleplayCommandPhaseGuard::Resolve(viewer, RoleplayPhaseSpawnType::GameObject, spawnId), false);
+}
+
 bool GobGroupMgr::ValidateSpawnForGroup(ObjectGuid::LowType spawnId, ObjectGuid::LowType expectedMapRoot,
     bool asRoot, std::string& error) const
 {
@@ -198,6 +220,12 @@ bool GobGroupMgr::ValidateGroupIntegrity(GroupRecord const& group, std::string& 
             error = Trinity::StringFormat("member {} map {} != root map {}", member, memberData->mapId, rootData->mapId);
             return false;
         }
+        if (GetLogicalPhaseId(member) != GetLogicalPhaseId(group.RootGuid))
+        {
+            error = Trinity::StringFormat("member {} logical RP phase {} != root {} phase {}",
+                member, GetLogicalPhaseId(member), group.RootGuid, GetLogicalPhaseId(group.RootGuid));
+            return false;
+        }
 
         auto relIt = group.Relatives.find(member);
         if (relIt == group.Relatives.end()
@@ -222,6 +250,7 @@ bool GobGroupMgr::CheckRelativeConsistency(GroupRecord const& group, std::string
     }
 
     Position const rootPos = SpawnPosition(*rootData);
+    QuaternionData const rootRot = rootData->rotation;
     for (ObjectGuid::LowType member : group.Members)
     {
         GameObjectData const* memberData = sObjectMgr->GetGameObjectData(member);
@@ -238,7 +267,7 @@ bool GobGroupMgr::CheckRelativeConsistency(GroupRecord const& group, std::string
             return false;
         }
 
-        Position const expected = GobGroupTransform::ApplyLocalOffsetDouble(rootPos, relIt->second);
+        Position const expected = GobGroupTransform::ApplyLocalOffsetDouble(rootPos, rootRot, relIt->second);
         Position const actual = SpawnPosition(*memberData);
         if (!GobGroupTransform::PosNearlyEqual(expected, actual))
         {
@@ -246,7 +275,7 @@ bool GobGroupMgr::CheckRelativeConsistency(GroupRecord const& group, std::string
             return false;
         }
 
-        QuaternionData const expectedRot = GobGroupTransform::ApplyRelativeRotation(relIt->second.RelativeRotation, rootPos.GetOrientation());
+        QuaternionData const expectedRot = GobGroupTransform::ApplyRelativeRotation(relIt->second.RelativeRotation, rootRot);
         if (!GobGroupTransform::QuatNearlyEqual(expectedRot, memberData->rotation))
         {
             error = Trinity::StringFormat("member {} rotation drifts from saved relative quaternion", member);
@@ -315,7 +344,8 @@ void GobGroupMgr::LoadAndValidate()
 
     if (QueryResult memberResult = WorldDatabase.Query(
         "SELECT gg.member_guid, gg.root_guid, gg.offset_x, gg.offset_y, gg.offset_z, gg.offset_o, "
-        "gg.rotation0, gg.rotation1, gg.rotation2, gg.rotation3, member_go.guid, root_go.guid "
+        "gg.rotation0, gg.rotation1, gg.rotation2, gg.rotation3, "
+        "member_go.guid AS member_exists, root_go.guid AS root_exists "
         "FROM gameobject_group gg "
         "LEFT JOIN gameobject member_go ON member_go.guid = gg.member_guid "
         "LEFT JOIN gameobject root_go ON root_go.guid = gg.root_guid"))
@@ -548,6 +578,25 @@ bool GobGroupMgr::IsBusy(ObjectGuid::LowType anyGuid) const
     return rootGuid && IsBusyUnlocked(rootGuid);
 }
 
+bool GobGroupMgr::TryGetGroupSpawnIds(ObjectGuid::LowType anyGuid, std::vector<uint64>& outSpawnIds) const
+{
+    outSpawnIds.clear();
+    std::scoped_lock lock(_mutex);
+    ResolvedGroup resolved;
+    if (!TryResolveGroupUnlocked(anyGuid, resolved))
+        return false;
+
+    GroupRecord const* group = FindGroup(resolved.RootGuid);
+    if (!group)
+        return false;
+
+    outSpawnIds.reserve(group->Members.size() + 1);
+    outSpawnIds.push_back(group->RootGuid);
+    for (ObjectGuid::LowType member : group->Members)
+        outSpawnIds.push_back(member);
+    return true;
+}
+
 void GobGroupMgr::SetActiveRoot(uint32 accountId, ObjectGuid::LowType anyGuid)
 {
     std::scoped_lock lock(_mutex);
@@ -679,8 +728,25 @@ bool GobGroupMgr::AddMember(ObjectGuid::LowType groupGuid, ObjectGuid::LowType m
     if (!ComputeRelativeForMember(rootGuid, memberGuid, rel, error))
         return false;
 
+    uint64 const rootPhaseId = GetLogicalPhaseId(rootGuid);
+    uint64 const memberPhaseId = GetLogicalPhaseId(memberGuid);
+    if (memberPhaseId && memberPhaseId != rootPhaseId)
+    {
+        error = Trinity::StringFormat("GO {} is assigned to logical RP phase {}; root {} uses phase {}",
+            memberGuid, memberPhaseId, rootGuid, rootPhaseId);
+        return false;
+    }
+
     if (!PersistSingleRelative(rootGuid, memberGuid, rel, error))
         return false;
+
+    if (rootPhaseId && !sRoleplayPhaseMgr.AssignPersistentSpawn(RoleplayPhaseSpawnType::GameObject, memberGuid,
+        sObjectMgr->GetGameObjectData(memberGuid)->mapId, rootPhaseId))
+    {
+        WorldDatabase.PExecute("DELETE FROM gameobject_group WHERE member_guid = {}", memberGuid);
+        error = Trinity::StringFormat("Could not assign GO {} to root {} logical RP phase {}", memberGuid, rootGuid, rootPhaseId);
+        return false;
+    }
 
     group->Members.push_back(memberGuid);
     std::sort(group->Members.begin(), group->Members.end());
@@ -900,13 +966,15 @@ bool GobGroupMgr::CleanupOrphans(bool confirm, std::string& report)
     return true;
 }
 
-std::string GobGroupMgr::BuildInfo(ObjectGuid::LowType objectGuid) const
+std::string GobGroupMgr::BuildInfo(Player const* viewer, ObjectGuid::LowType objectGuid) const
 {
     std::scoped_lock lock(_mutex);
 
     GameObjectData const* objectData = sObjectMgr->GetGameObjectData(objectGuid);
     if (!objectData)
         return Trinity::StringFormat("GO {} not found in ObjectMgr", objectGuid);
+    if (!IsVisibleInLogicalContext(viewer, objectGuid))
+        return Trinity::StringFormat("GO {} is in another logical RP phase", objectGuid);
 
     GameObjectTemplate const* objectTemplate = sObjectMgr->GetGameObjectTemplate(objectData->id);
     std::ostringstream oss;
@@ -1062,7 +1130,7 @@ std::string GobGroupMgr::BuildStatus(ObjectGuid::LowType anyGuid) const
     return oss.str();
 }
 
-std::string GobGroupMgr::BuildList(Optional<uint32> mapId) const
+std::string GobGroupMgr::BuildList(Player const* viewer, Optional<uint32> mapId) const
 {
     std::scoped_lock lock(_mutex);
     std::ostringstream oss;
@@ -1071,6 +1139,8 @@ std::string GobGroupMgr::BuildList(Optional<uint32> mapId) const
     {
         GameObjectData const* data = sObjectMgr->GetGameObjectData(rootGuid);
         if (mapId && (!data || data->mapId != *mapId))
+            continue;
+        if (!IsVisibleInLogicalContext(viewer, rootGuid))
             continue;
         oss << rootGuid << " '" << group.Name << "' members=" << group.Members.size()
             << " map=" << (data ? data->mapId : 0)
@@ -1094,6 +1164,7 @@ namespace
         {
             snap.Entry = data->id;
             snap.MapId = data->mapId;
+            snap.LogicalPhaseId = sRoleplayPhaseMgr.GetSpawnPhaseId(RoleplayPhaseSpawnType::GameObject, guid, data->mapId);
             snap.X = data->spawnPoint.GetPositionX();
             snap.Y = data->spawnPoint.GetPositionY();
             snap.Z = data->spawnPoint.GetPositionZ();
@@ -1103,7 +1174,7 @@ namespace
     }
 }
 
-bool GobGroupMgr::TryGetInfoSnapshot(ObjectGuid::LowType objectGuid, GobGroupInfoSnapshot& out, std::string& error) const
+bool GobGroupMgr::TryGetInfoSnapshot(Player const* viewer, ObjectGuid::LowType objectGuid, GobGroupInfoSnapshot& out, std::string& error) const
 {
     std::scoped_lock lock(_mutex);
     out = {};
@@ -1113,6 +1184,11 @@ bool GobGroupMgr::TryGetInfoSnapshot(ObjectGuid::LowType objectGuid, GobGroupInf
     if (!objectData)
     {
         error = Trinity::StringFormat("GO {} not found in ObjectMgr", objectGuid);
+        return false;
+    }
+    if (!IsVisibleInLogicalContext(viewer, objectGuid))
+    {
+        error = Trinity::StringFormat("GO {} is in another logical RP phase", objectGuid);
         return false;
     }
 
@@ -1142,7 +1218,7 @@ bool GobGroupMgr::TryGetInfoSnapshot(ObjectGuid::LowType objectGuid, GobGroupInf
     return true;
 }
 
-void GobGroupMgr::GetListSnapshot(Optional<uint32> mapId, GobGroupListSnapshot& out) const
+void GobGroupMgr::GetListSnapshot(Player const* viewer, Optional<uint32> mapId, GobGroupListSnapshot& out) const
 {
     std::scoped_lock lock(_mutex);
     out = {};
@@ -1153,12 +1229,15 @@ void GobGroupMgr::GetListSnapshot(Optional<uint32> mapId, GobGroupListSnapshot& 
         GameObjectData const* data = sObjectMgr->GetGameObjectData(rootGuid);
         if (mapId && (!data || data->mapId != *mapId))
             continue;
+        if (!IsVisibleInLogicalContext(viewer, rootGuid))
+            continue;
 
         GobGroupListItemSnapshot item;
         item.RootGuid = rootGuid;
         item.Name = group.Name;
         item.MemberCount = uint32(group.Members.size());
         item.MapId = data ? data->mapId : 0;
+        item.LogicalPhaseId = GetLogicalPhaseId(rootGuid);
         out.Items.push_back(std::move(item));
     }
 }
@@ -1188,6 +1267,8 @@ void GobGroupMgr::GetNearSnapshot(Player const* player, float radius, GobGroupNe
         GameObjectData const* data = sObjectMgr->GetGameObjectData(rootGuid);
         if (!data || data->mapId != out.MapId)
             continue;
+        if (!IsVisibleInLogicalContext(player, rootGuid))
+            continue;
 
         float const dx = data->spawnPoint.GetPositionX() - px;
         float const dy = data->spawnPoint.GetPositionY() - py;
@@ -1201,6 +1282,7 @@ void GobGroupMgr::GetNearSnapshot(Player const* player, float radius, GobGroupNe
         item.Name = group.Name;
         item.MemberCount = uint32(group.Members.size());
         item.MapId = data->mapId;
+        item.LogicalPhaseId = GetLogicalPhaseId(rootGuid);
         item.Distance = std::sqrt(distanceSq);
         item.X = data->spawnPoint.GetPositionX();
         item.Y = data->spawnPoint.GetPositionY();
@@ -1313,6 +1395,12 @@ uint32 GobGroupMgr::ScanNear(Player* player, ObjectGuid::LowType groupGuid, floa
             continue;
         }
 
+        if (!IsVisibleInLogicalContext(player, spawnId))
+        {
+            ++skipped;
+            continue;
+        }
+
         // already in this group
         if (std::find(group->Members.begin(), group->Members.end(), spawnId) != group->Members.end())
         {
@@ -1382,11 +1470,18 @@ bool GobGroupMgr::AddNear(Player* player, ObjectGuid::LowType groupGuid, float r
 
     std::vector<std::pair<ObjectGuid::LowType, MemberRelativeTransform>> rows;
     rows.reserve(candidates.size());
+    uint64 const rootPhaseId = GetLogicalPhaseId(rootGuid);
     uint32 failed = 0;
     for (ObjectGuid::LowType spawnId : candidates)
     {
         std::string error;
         if (!ValidateSpawnForGroup(spawnId, rootGuid, false, error))
+        {
+            ++failed;
+            continue;
+        }
+        uint64 const memberPhaseId = GetLogicalPhaseId(spawnId);
+        if (memberPhaseId && memberPhaseId != rootPhaseId)
         {
             ++failed;
             continue;
@@ -1407,6 +1502,24 @@ bool GobGroupMgr::AddNear(Player* player, ObjectGuid::LowType groupGuid, float r
     {
         report = error.empty() ? "Failed to persist nearby members" : error;
         return false;
+    }
+
+    if (rootPhaseId)
+    {
+        std::vector<uint64> memberIds;
+        memberIds.reserve(rows.size());
+        for (auto const& [memberGuid, relative] : rows)
+            memberIds.push_back(memberGuid);
+
+        if (!sRoleplayPhaseMgr.AssignPersistentSpawns(RoleplayPhaseSpawnType::GameObject, memberIds, rootPhaseId))
+        {
+            WorldDatabaseTransaction rollback = WorldDatabase.BeginTransaction();
+            for (uint64 memberGuid : memberIds)
+                rollback->PAppend("DELETE FROM gameobject_group WHERE member_guid = {}", memberGuid);
+            WorldDatabase.DirectCommitTransaction(rollback);
+            report = "Failed to assign nearby members to the group's logical RP phase";
+            return false;
+        }
     }
 
     for (auto const& [memberGuid, relative] : rows)
@@ -1446,6 +1559,11 @@ bool GobGroupMgr::Capture(ObjectGuid::LowType anyGuid, bool silent, std::string&
     if (!group)
     {
         error = "Group cache miss";
+        return false;
+    }
+    if (!ValidateGroupIntegrity(*group, error))
+    {
+        MarkDirty(*group, error);
         return false;
     }
 
@@ -1610,6 +1728,26 @@ bool GobGroupMgr::StartJobDb(GroupJob& job)
 {
     WorldDatabaseTransaction trans = WorldDatabase.BeginTransaction();
     GobGroupTransform::AppendTransformUpdateChunks(trans, job.Plan, job.UpdateMap);
+    if (!job.PendingRelatives.empty())
+        GobGroupTransform::AppendRelativeUpsertChunks(trans, job.RootGuid, job.PendingRelatives);
+    for (size_t offset = 0; offset < job.PendingSizes.size(); offset += GOBGROUP_SQL_CHUNK_SIZE)
+    {
+        size_t const end = std::min(offset + GOBGROUP_SQL_CHUNK_SIZE, job.PendingSizes.size());
+        std::ostringstream sizeCase, inList;
+        sizeCase << "size = CASE guid";
+        for (size_t i = offset; i < end; ++i)
+        {
+            std::string const guid = Trinity::StringFormat("{}", job.PendingSizes[i].first);
+            sizeCase << " WHEN " << guid << " THEN "
+                << GobGroupTransform::FormatSqlFloat(job.PendingSizes[i].second);
+            if (i != offset)
+                inList << ',';
+            inList << guid;
+        }
+        sizeCase << " END";
+        trans->Append(Trinity::StringFormat("UPDATE gameobject SET {} WHERE guid IN ({})",
+            sizeCase.str(), inList.str()).c_str());
+    }
     job.Phase = JobPhase::DbPending;
 
     ObjectGuid::LowType rootGuid = job.RootGuid;
@@ -1631,6 +1769,17 @@ bool GobGroupMgr::StartJobDb(GroupJob& job)
                 group->LastError = active.Error;
             return;
         }
+
+        if (GroupRecord* group = mgr.FindGroup(rootGuid))
+        {
+            for (auto const& [member, relative] : active.PendingRelatives)
+                group->Relatives[member] = relative;
+            if (active.ClearDirtyOnSuccess)
+                mgr.ClearDirty(*group);
+        }
+        for (auto const& [spawnId, newSize] : active.PendingSizes)
+            if (GameObjectData* data = const_cast<GameObjectData*>(sObjectMgr->GetGameObjectData(spawnId)))
+                data->size = newSize;
 
         active.Phase = JobPhase::RuntimePending;
         active.Stage = RuntimeStage::Hide;
@@ -2075,6 +2224,223 @@ bool GobGroupMgr::Turn(ObjectGuid::LowType groupGuid, float newOrientation, std:
     QuaternionData const newRootRot = GobGroupTransform::ApplyRootTilt(baseRotation, oldO, target.GetOrientation());
 
     return EnqueueTransform(rootGuid, target, newRootRot, rootData->mapId, false, true, error);
+}
+
+bool GobGroupMgr::Nudge(ObjectGuid::LowType groupGuid, float dx, float dy, float dz, std::string& error)
+{
+    if (!std::isfinite(dx) || !std::isfinite(dy) || !std::isfinite(dz))
+    {
+        error = "Nudge delta is not finite";
+        return false;
+    }
+
+    std::scoped_lock lock(_mutex);
+    ResolvedGroup resolved;
+    if (!RequireGroupUnlocked(groupGuid, resolved, error))
+        return false;
+
+    ObjectGuid::LowType const rootGuid = resolved.RootGuid;
+    GroupRecord* group = FindGroup(rootGuid);
+    if (!group)
+    {
+        error = Trinity::StringFormat("Group root {} not found", rootGuid);
+        return false;
+    }
+
+    GameObjectData const* rootData = sObjectMgr->GetGameObjectData(rootGuid);
+    if (!rootData)
+    {
+        error = "Root spawn missing";
+        return false;
+    }
+
+    Position base = rootData->spawnPoint;
+    QuaternionData baseRotation = rootData->rotation;
+    if (auto jobIt = _jobs.find(rootGuid); jobIt != _jobs.end() && jobIt->second
+        && jobIt->second->Phase == JobPhase::Calculated && !jobIt->second->Plan.Rows.empty())
+    {
+        base = jobIt->second->Plan.Rows.front().NewWorld;
+        baseRotation = jobIt->second->Plan.Rows.front().NewRotation;
+    }
+
+    Position target = base;
+    target.Relocate(base.GetPositionX() + dx, base.GetPositionY() + dy, base.GetPositionZ() + dz, base.GetOrientation());
+    return EnqueueTransform(rootGuid, target, baseRotation, rootData->mapId, false, true, error);
+}
+
+bool GobGroupMgr::RotateDelta(ObjectGuid::LowType groupGuid, float dYawRad, float dPitchRad, float dRollRad,
+    std::string& error)
+{
+    if (!std::isfinite(dYawRad) || !std::isfinite(dPitchRad) || !std::isfinite(dRollRad))
+    {
+        error = "Rotate delta is not finite";
+        return false;
+    }
+
+    std::scoped_lock lock(_mutex);
+    ResolvedGroup resolved;
+    if (!RequireGroupUnlocked(groupGuid, resolved, error))
+        return false;
+
+    ObjectGuid::LowType const rootGuid = resolved.RootGuid;
+    GroupRecord* group = FindGroup(rootGuid);
+    if (!group)
+    {
+        error = Trinity::StringFormat("Group root {} not found", rootGuid);
+        return false;
+    }
+
+    GameObjectData const* rootData = sObjectMgr->GetGameObjectData(rootGuid);
+    if (!rootData)
+    {
+        error = "Root spawn missing";
+        return false;
+    }
+
+    Position target = SpawnPosition(*rootData);
+    QuaternionData baseRotation = rootData->rotation;
+    if (auto jobIt = _jobs.find(rootGuid); jobIt != _jobs.end() && jobIt->second
+        && jobIt->second->Phase == JobPhase::Calculated && !jobIt->second->Plan.Rows.empty())
+    {
+        target = jobIt->second->Plan.Rows.front().NewWorld;
+        baseRotation = jobIt->second->Plan.Rows.front().NewRotation;
+    }
+
+    // Local composition: new = base * delta (delta applied in root local frame).
+    // ApplyRelativeRotation(rel, root) = rel * root.
+    QuaternionData const delta = QuaternionData::fromEulerAnglesZYX(dYawRad, dPitchRad, dRollRad);
+    QuaternionData const composed = GobGroupTransform::ApplyRelativeRotation(baseRotation, delta);
+
+    float yaw = 0.f, pitch = 0.f, roll = 0.f;
+    composed.toEulerAnglesZYX(yaw, pitch, roll);
+    target.SetOrientation(Position::NormalizeOrientation(yaw));
+
+    return EnqueueTransform(rootGuid, target, composed, rootData->mapId, false, true, error);
+}
+
+bool GobGroupMgr::ScaleUniform(ObjectGuid::LowType groupGuid, float factor, std::string& error)
+{
+    if (!std::isfinite(factor) || factor <= 0.f)
+    {
+        error = "Scale factor must be a finite positive number";
+        return false;
+    }
+
+    std::scoped_lock lock(_mutex);
+    ResolvedGroup resolved;
+    if (!RequireGroupUnlocked(groupGuid, resolved, error))
+        return false;
+
+    ObjectGuid::LowType const rootGuid = resolved.RootGuid;
+    GroupRecord* group = FindGroup(rootGuid);
+    if (!group)
+    {
+        error = Trinity::StringFormat("Group root {} not found", rootGuid);
+        return false;
+    }
+
+    if (IsBusyUnlocked(rootGuid))
+    {
+        error = "Group is busy with a transform job";
+        return false;
+    }
+
+    GameObjectData const* rootData = sObjectMgr->GetGameObjectData(rootGuid);
+    if (!rootData)
+    {
+        error = "Root spawn missing";
+        return false;
+    }
+
+    auto effectiveSize = [](GameObjectData const& data) -> float
+    {
+        if (data.size > 0.f)
+            return data.size;
+        if (GameObjectTemplate const* info = sObjectMgr->GetGameObjectTemplate(data.id))
+            return info->size > 0.f ? info->size : 1.f;
+        return 1.f;
+    };
+
+    std::vector<std::pair<ObjectGuid::LowType, MemberRelativeTransform>> rows;
+    rows.reserve(group->Members.size());
+    for (ObjectGuid::LowType member : group->Members)
+    {
+        auto relIt = group->Relatives.find(member);
+        if (relIt == group->Relatives.end())
+        {
+            error = Trinity::StringFormat("member {} has no relative row", member);
+            return false;
+        }
+
+        MemberRelativeTransform scaled = relIt->second;
+        scaled.OffsetX *= factor;
+        scaled.OffsetY *= factor;
+        scaled.OffsetZ *= factor;
+        if (!GobGroupTransform::IsFinite(Position(scaled.OffsetX, scaled.OffsetY, scaled.OffsetZ, scaled.OffsetO))
+            || !GobGroupTransform::IsFinite(scaled.RelativeRotation))
+        {
+            error = Trinity::StringFormat("Scaled relative transform for {} is not finite", member);
+            return false;
+        }
+        rows.emplace_back(member, scaled);
+    }
+
+    std::vector<ObjectGuid::LowType> spawnIds;
+    spawnIds.reserve(group->Members.size() + 1);
+    spawnIds.push_back(rootGuid);
+    spawnIds.insert(spawnIds.end(), group->Members.begin(), group->Members.end());
+
+    std::vector<std::pair<ObjectGuid::LowType, float>> sizes;
+    sizes.reserve(spawnIds.size());
+    for (ObjectGuid::LowType spawnId : spawnIds)
+    {
+        GameObjectData const* data = sObjectMgr->GetGameObjectData(spawnId);
+        if (!data)
+        {
+            error = Trinity::StringFormat("Spawn {} missing during scale", spawnId);
+            return false;
+        }
+
+        float const newSize = effectiveSize(*data) * factor;
+        if (!std::isfinite(newSize) || newSize <= 0.f)
+        {
+            error = Trinity::StringFormat("Non-finite scale for {}", spawnId);
+            return false;
+        }
+        sizes.emplace_back(spawnId, newSize);
+    }
+
+    Position base = rootData->spawnPoint;
+    QuaternionData baseRotation = rootData->rotation;
+    if (auto jobIt = _jobs.find(rootGuid); jobIt != _jobs.end() && jobIt->second
+        && jobIt->second->Phase == JobPhase::Calculated && !jobIt->second->Plan.Rows.empty())
+    {
+        base = jobIt->second->Plan.Rows.front().NewWorld;
+        baseRotation = jobIt->second->Plan.Rows.front().NewRotation;
+    }
+
+    auto previousRelatives = group->Relatives;
+    for (auto const& [member, scaled] : rows)
+        group->Relatives[member] = scaled;
+
+    if (!EnqueueTransform(rootGuid, base, baseRotation, rootData->mapId, false, false, error))
+    {
+        group->Relatives = std::move(previousRelatives);
+        return false;
+    }
+
+    group->Relatives = std::move(previousRelatives);
+    auto jobIt = _jobs.find(rootGuid);
+    if (jobIt == _jobs.end() || !jobIt->second)
+    {
+        error = "Scale transform job was not created";
+        return false;
+    }
+
+    jobIt->second->PendingRelatives = std::move(rows);
+    jobIt->second->PendingSizes = std::move(sizes);
+    jobIt->second->ClearDirtyOnSuccess = true;
+    return true;
 }
 
 bool GobGroupMgr::Relocate(ObjectGuid::LowType groupGuid, uint32 mapId, Position const& newRootPos,

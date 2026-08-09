@@ -50,6 +50,7 @@
 #include "PhasingHandler.h"
 #include "PoolMgr.h"
 #include "QueryPackets.h"
+#include "RoleplayPhaseMgr.h"
 #include "SpellAuras.h"
 #include "SpellMgr.h"
 #include "Transport.h"
@@ -2202,6 +2203,13 @@ bool GameObject::LoadFromDB(ObjectGuid::LowType spawnId, Map* map, bool addToMap
     trans->Append(stmt);
 
     WorldDatabase.CommitTransaction(trans);
+    sRoleplayPhaseMgr.ClearPersistentSpawn(RoleplayPhaseSpawnType::GameObject, spawnId);
+
+    if (RoleplayDatabasePreparedStatement* roleplayStmt = RoleplayDatabase.GetPreparedStatement(Roleplay_DEL_GAMEOBJECTEXTRA))
+    {
+        roleplayStmt->setUInt64(0, spawnId);
+        RoleplayDatabase.Execute(roleplayStmt);
+    }
 
     return true;
 }
@@ -4803,7 +4811,7 @@ bool GameObject::IsAtInteractDistance(Position const& pos, float radius) const
 
 bool GameObject::IsWithinDistInMap(Player const* player) const
 {
-    return IsInMap(player) && InSamePhase(player) && IsAtInteractDistance(player);
+    return IsInMap(player) && CanSeeInPhaseContexts(player) && IsAtInteractDistance(player);
 }
 
 SpellInfo const* GameObject::GetSpellForLock(Player const* player) const

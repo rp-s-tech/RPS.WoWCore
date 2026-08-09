@@ -1,5 +1,11 @@
 /*
  * NobleNext — spatial GO group transform math + batch SQL writer.
+ *
+ * Relative poses use a full root quaternion frame:
+ *   localXYZ = inv(rootRot) * (memberXYZ - rootXYZ)
+ *   RelativeRotation = memberRot * inv(rootRot)
+ * Legacy yaw-only captured offsets remain valid while the root is yaw-aligned;
+ * `.gobject group recalc` upgrades rows to the full-quat representation.
  */
 
 #pragma once
@@ -68,13 +74,27 @@ namespace RoleplayCore::NobleNext
             float posEps = GOBGROUP_POS_EPSILON, float oriEps = GOBGROUP_ORI_EPSILON);
 
         QuaternionData YawQuat(float orientation);
+
+        // Full-quaternion relative rotation: member * inv(root)
+        QuaternionData ComputeRelativeRotation(QuaternionData const& memberWorld, QuaternionData const& rootWorld);
+        // Full-quaternion apply: relative * newRoot
+        QuaternionData ApplyRelativeRotation(QuaternionData const& relative, QuaternionData const& newRootWorld);
+
+        // Thin yaw wrappers (legacy / yaw-aligned roots)
         QuaternionData ComputeRelativeRotation(QuaternionData const& memberWorld, float rootOrientation);
         QuaternionData ApplyRelativeRotation(QuaternionData const& relative, float newRootOrientation);
+
         QuaternionData ApplyRootTilt(QuaternionData const& rootWorld, float oldRootOrientation, float newRootOrientation);
 
         MemberRelativeTransform ComputeRelative(Position const& rootPos, QuaternionData const& rootRot,
             Position const& memberPos, QuaternionData const& memberRot);
 
+        Position ApplyLocalOffset(Position const& rootPos, QuaternionData const& rootRot,
+            MemberRelativeTransform const& local);
+        Position ApplyLocalOffsetDouble(Position const& rootPos, QuaternionData const& rootRot,
+            MemberRelativeTransform const& local);
+
+        // Thin yaw wrappers
         Position ApplyLocalOffset(Position const& rootPos, MemberRelativeTransform const& local);
         Position ApplyLocalOffsetDouble(Position const& rootPos, MemberRelativeTransform const& local);
 

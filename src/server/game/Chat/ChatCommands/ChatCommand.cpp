@@ -24,7 +24,11 @@
 #include "Log.h"
 #include "Map.h"
 #include "Player.h"
+#include "RoleplayCommandPhaseGuard.h"
+#include "RoleplayPhaseMgr.h"
+#include "RoleplayVisibilityContext.h"
 #include "ScriptMgr.h"
+#include "Unit.h"
 #ifdef ELUNA
 #include "LuaEngine.h"
 #endif
@@ -172,14 +176,29 @@ static void LogCommandUsage(WorldSession const& session, uint32 permission, std:
                 zoneName = zone->AreaName[locale];
     }
 
-    sLog->OutCommand(session.GetAccountId(), "Command: {} [Player: {} ({}) (Account: {}) X: {} Y: {} Z: {} Map: {} ({}) Area: {} ({}) Zone: {} Selected: {} ({})]",
+    uint64 const playerPhaseId = RoleplayCommandPhaseGuard::GetViewerPhaseId(player);
+    uint64 targetPhaseId = 0;
+    if (Unit* selected = player->GetSelectedUnit())
+        targetPhaseId = RoleplayVisibilityContext::Resolve(*selected);
+    else
+    {
+        ObjectGuid::LowType const lastGo = player->GetLastTargetedGO2()
+            ? player->GetLastTargetedGO2()
+            : ObjectGuid::LowType(player->GetLastTargetedGO());
+        if (lastGo)
+            targetPhaseId = RoleplayCommandPhaseGuard::GetSpawnPhaseId(player,
+                RoleplayPhaseSpawnType::GameObject, lastGo);
+    }
+
+    sLog->OutCommand(session.GetAccountId(),
+        "Command: {} [Player: {} ({}) (Account: {}) X: {} Y: {} Z: {} Map: {} ({}) Area: {} ({}) Zone: {} Selected: {} ({}) RPPhase: {} TargetRPPhase: {}]",
         cmdStr, player->GetName(), player->GetGUID().ToString(),
         session.GetAccountId(), player->GetPositionX(), player->GetPositionY(),
         player->GetPositionZ(), player->GetMapId(),
         player->FindMap() ? player->FindMap()->GetMapName() : "Unknown",
         areaId, areaName, zoneName,
         player->GetSelectedUnit() ? player->GetSelectedUnit()->GetName().c_str() : "",
-        targetGuid.ToString());
+        targetGuid.ToString(), playerPhaseId, targetPhaseId);
 }
 
 void Trinity::Impl::ChatCommands::ChatCommandNode::SendCommandHelp(ChatHandler& handler) const

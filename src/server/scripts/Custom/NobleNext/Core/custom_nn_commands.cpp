@@ -29,8 +29,15 @@ namespace RoleplayCore::NobleNext
                 { "status", HandleNnStatus, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
             };
 
+            static ChatCommandTable rpsTable =
+            {
+                { "help",   HandleNnHelp,   rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "status", HandleNnStatus, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+            };
+
             static ChatCommandTable commandTable =
             {
+                { "rps", rpsTable },
                 { "nn", nnCommandTable },
                 { "nnstatus", HandleNnStatus, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "poilist",  HandlePoiList,  rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
@@ -57,13 +64,15 @@ namespace RoleplayCore::NobleNext
             if (!handler->GetPlayer() || !HasStaffPermission(handler->GetPlayer()))
                 return false;
 
-            handler->SendSysMessage("NobleNext GM-команды (C++):");
-            handler->SendSysMessage("  .poi*, .poilist, .weather, .daytime, .setgrouptime");
-            handler->SendSysMessage("  .gob tele <guid>, .movego, .wpmove/.wpgo, .pet*, .npccontrol");
-            handler->SendSysMessage("  .gobject group info <object-guid> / create|add|move|turn … / delete <group-guid> full-force");
-            handler->SendSysMessage("  .nnsay/.nnyell, .sethp/.setbuff/.npcsetstat, .wakeup");
-            handler->SendSysMessage("Vanilla / TC:");
-            handler->SendSysMessage("  .gob add/.gob delete/.gob near, .npc delete, .summon, .modify phase/scale");
+            handler->SendSysMessage("Role Play Systems (.rps) — единая точка:");
+            handler->SendSysMessage("  .rps phase …          — RP world maps (alias: .rp phase)");
+            handler->SendSysMessage("  .rps character set|add|dam|remove {hp|armor|en|focus|…}");
+            handler->SendSysMessage("  .rps say say|emote|yell <text>");
+            handler->SendSysMessage("  .rps npc setstat|roll|reload …");
+            handler->SendSysMessage("  .rps help|status");
+            handler->SendSysMessage("Прочее NobleNext:");
+            handler->SendSysMessage("  .poi*, .weather, .daytime, .gobject group …, .pet*, .wpmove");
+            handler->SendSysMessage("Legacy aliases: .sethp, .nnsay, .nnstatus (пока сохранены)");
             return true;
         }
 

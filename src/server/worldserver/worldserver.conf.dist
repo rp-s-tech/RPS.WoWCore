@@ -4518,12 +4518,21 @@ Eluna.ReloadSecurityLevel = 3
 
 ###################################################################################################
 #
+#    Roleplay.GameEvents.Enabled
+#        Description: Enables scheduled and manual game events. When disabled, game_event data is
+#                     still loaded and negative baseline spawns are kept without seasonal overlays.
+#                     Включает события по расписанию и вручную. При 0 данные game_event загружаются,
+#                     а базовые отрицательные спавны сохраняются без сезонных изменений.
+#        Default:     0 - (Disabled)
+#                     1 - (Enabled)
+#
 #    Roleplay.CustomNpc.OutfitIdStart
 #    Roleplay.CustomNpc.CreatureTemplateIdStart
 #        Description: Controls the id from which dressnpc outfits & custom npc creature_template entries will be added.
 #        Default:     OutfitIdStart = 200001
 #                     CreatureTemplateIdStart = 400000
 
+Roleplay.GameEvents.Enabled = 0
 Roleplay.CustomNpc.OutfitIdStart = 200001
 Roleplay.CustomNpc.CreatureTemplateIdStart = 400000
 

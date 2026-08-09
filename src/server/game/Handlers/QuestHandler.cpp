@@ -54,6 +54,9 @@ void WorldSession::HandleQuestgiverStatusQueryOpcode(WorldPackets::Quest::QuestG
         return;
     }
 
+    if (WorldObject const* worldObject = questGiver->ToWorldObject(); worldObject && !_player->CanSeeInPhaseContexts(worldObject))
+        return;
+
     QuestGiverStatus questStatus = _player->GetQuestDialogStatus(questGiver);
 
     //inform client about status of quest
@@ -120,6 +123,9 @@ void WorldSession::HandleQuestgiverAcceptQuestOpcode(WorldPackets::Quest::QuestG
 
     // no or incorrect quest giver
     if (!object)
+        return;
+
+    if (WorldObject const* worldObject = object->ToWorldObject(); worldObject && !_player->CanSeeInPhaseContexts(worldObject))
         return;
 
     if (Player* playerQuestObject = object->ToPlayer())
@@ -222,6 +228,9 @@ void WorldSession::HandleQuestgiverQueryQuestOpcode(WorldPackets::Quest::QuestGi
         _player->PlayerTalkClass->SendCloseGossip();
         return;
     }
+
+    if (WorldObject const* worldObject = object->ToWorldObject(); worldObject && !_player->CanSeeInPhaseContexts(worldObject))
+        return;
 
     if (Quest const* quest = sObjectMgr->GetQuestTemplate(packet.QuestID))
     {
@@ -366,6 +375,9 @@ void WorldSession::HandleQuestgiverChooseRewardOpcode(WorldPackets::Quest::Quest
         if (!object || !object->hasInvolvedQuest(packet.QuestID))
             return;
 
+        if (WorldObject const* worldObject = object->ToWorldObject(); worldObject && !_player->CanSeeInPhaseContexts(worldObject))
+            return;
+
         // some kind of WPE protection
         if (!_player->CanInteractWithQuestGiver(object))
             return;
@@ -412,6 +424,9 @@ void WorldSession::HandleQuestgiverRequestRewardOpcode(WorldPackets::Quest::Ques
     {
         Object* object = ObjectAccessor::GetObjectByTypeMask(*_player, packet.QuestGiverGUID, TYPEMASK_UNIT | TYPEMASK_GAMEOBJECT);
         if (!object || !object->hasInvolvedQuest(packet.QuestID))
+            return;
+
+        if (WorldObject const* worldObject = object->ToWorldObject(); worldObject && !_player->CanSeeInPhaseContexts(worldObject))
             return;
 
         // some kind of WPE protection
@@ -511,6 +526,9 @@ void WorldSession::HandleQuestConfirmAccept(WorldPackets::Quest::QuestConfirmAcc
     if (!originalPlayer)
         return;
 
+    if (!_player->CanSeeInPhaseContexts(originalPlayer))
+        return;
+
     if (!_player->IsInSameRaidWith(originalPlayer))
         return;
 
@@ -546,6 +564,9 @@ void WorldSession::HandleQuestgiverCompleteQuest(WorldPackets::Quest::QuestGiver
         object = ObjectAccessor::GetObjectByTypeMask(*_player, packet.QuestGiverGUID, TYPEMASK_UNIT | TYPEMASK_GAMEOBJECT);
 
     if (!object)
+        return;
+
+    if (WorldObject const* worldObject = object->ToWorldObject(); worldObject && !_player->CanSeeInPhaseContexts(worldObject))
         return;
 
     if (!quest->HasFlag(QUEST_FLAGS_AUTO_COMPLETE))
@@ -839,8 +860,11 @@ void WorldSession::HandlePlayerChoiceResponse(WorldPackets::Quest::ChoiceRespons
         return;
     }
 
-    sScriptMgr->OnPlayerChoiceResponse(ObjectAccessor::GetWorldObject(*_player, _player->PlayerTalkClass->GetInteractionData().SourceGuid), _player,
-        playerChoice, playerChoiceResponse, choiceResponse.ResponseIdentifier);
+    WorldObject* source = ObjectAccessor::GetWorldObject(*_player, _player->PlayerTalkClass->GetInteractionData().SourceGuid);
+    if (source && !_player->CanSeeInPhaseContexts(source))
+        return;
+
+    sScriptMgr->OnPlayerChoiceResponse(source, _player, playerChoice, playerChoiceResponse, choiceResponse.ResponseIdentifier);
 }
 
 void WorldSession::HandleUiMapQuestLinesRequest(WorldPackets::Quest::UiMapQuestLinesRequest& uiMapQuestLinesRequest)

@@ -7,6 +7,8 @@
 #ifndef GAMEOBJECTMETHODS_H
 #define GAMEOBJECTMETHODS_H
 
+#include "RoleplayCommandPhaseGuard.h"
+
 /***
  * Inherits all methods from: [Object], [WorldObject]
  */
@@ -129,6 +131,15 @@ namespace LuaGameObject
         return 1;
     }
 
+    int CanEditForRoleplay(Eluna* E, GameObject* go)
+    {
+        Player* player = E->CHECKOBJ<Player>(2);
+        E->Push(player && go->GetSpawnId()
+            && RoleplayCommandPhaseGuard::AllowsAuthorizedGobMoverMutation(player,
+                RoleplayPhaseSpawnType::GameObject, go->GetSpawnId(), "gobmover_aio"));
+        return 1;
+    }
+
     /**
      * Sets the state of a [GameObject]
      *
@@ -248,6 +259,25 @@ namespace LuaGameObject
     }
 
     /**
+     * Returns local Euler rotation angles (ZYX) of the [GameObject]
+     *
+     * @return float oz : yaw (Z)
+     * @return float oy : pitch (Y)
+     * @return float ox : roll (X)
+     */
+    int GetLocalRotationAngles(Eluna* E, GameObject* go)
+    {
+        float oz = 0.0f;
+        float oy = 0.0f;
+        float ox = 0.0f;
+        go->GetLocalRotation().toEulerAnglesZYX(oz, oy, ox);
+        E->Push(oz);
+        E->Push(oy);
+        E->Push(ox);
+        return 3;
+    }
+
+    /**
      * Removes [GameObject] from the world
      *
      * The object is no longer reachable after this and it is not respawned.
@@ -349,6 +379,8 @@ namespace LuaGameObject
         { "GetGoState", &LuaGameObject::GetGoState },
         { "GetLootState", &LuaGameObject::GetLootState },
         { "GetDBTableGUIDLow", &LuaGameObject::GetDBTableGUIDLow },
+        { "CanEditForRoleplay", &LuaGameObject::CanEditForRoleplay },
+        { "GetLocalRotationAngles", &LuaGameObject::GetLocalRotationAngles },
 
         // Setters
         { "SetGoState", &LuaGameObject::SetGoState },
