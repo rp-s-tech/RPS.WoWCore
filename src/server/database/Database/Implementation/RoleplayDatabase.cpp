@@ -67,7 +67,8 @@ void RoleplayDatabaseConnection::DoPrepareStatements()
 
     // REPLACES
     PrepareStatement(Roleplay_REP_CREATUREEXTRA, "REPLACE INTO creature_extra (guid, scale, id_creator_bnet, id_creator_player, id_modifier_bnet, id_modifier_player, created, modified, phaseMask, displayLock, displayId, nativeDisplayId, genderLock, gender, swim, gravity, fly) VALUES (?, ?, ?, ?, ?, ?, from_unixtime(?), from_unixtime(?), ?, ?, ?, ?, ?, ?, ?, ?, ?)", CONNECTION_ASYNC);
-    PrepareStatement(Roleplay_REP_GAMEOBJECTEXTRA, "REPLACE INTO gameobject_extra (guid, id_creator_bnet, id_creator_player, created, modified) VALUES (?, ?, ?, NOW(), NOW())", CONNECTION_ASYNC);
+    // CONNECTION_BOTH: GobBlueprint CommitRoleplay uses DirectCommitTransaction (sync).
+    PrepareStatement(Roleplay_REP_GAMEOBJECTEXTRA, "REPLACE INTO gameobject_extra (guid, id_creator_bnet, id_creator_player, created, modified) VALUES (?, ?, ?, NOW(), NOW())", CONNECTION_BOTH);
     PrepareStatement(Roleplay_REP_CUSTOMNPCDATA, "REPLACE INTO custom_npcs (`Key`, Entry) VALUES (?, ?)", CONNECTION_ASYNC);
     PrepareStatement(Roleplay_REP_CUSTOMNPCOWNER, "INSERT INTO custom_npc_owners (`Key`, owner_bnet_account_id, owner_alias, created_at, updated_at) VALUES (?, ?, ?, NOW(), NOW()) ON DUPLICATE KEY UPDATE owner_bnet_account_id = VALUES(owner_bnet_account_id), owner_alias = VALUES(owner_alias), updated_at = NOW()", CONNECTION_ASYNC);
     PrepareStatement(Roleplay_REP_SERVER_SETTINGS, "INSERT INTO server_settings (setting_name, setting_value) VALUES (?, ?)", CONNECTION_ASYNC);

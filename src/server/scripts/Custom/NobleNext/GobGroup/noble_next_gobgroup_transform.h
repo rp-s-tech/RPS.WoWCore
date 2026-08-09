@@ -27,8 +27,10 @@ namespace RoleplayCore::NobleNext
 {
     static constexpr uint32 GOBGROUP_MAX_MEMBERS = 128;
     static constexpr uint32 GOBGROUP_SQL_CHUNK_SIZE = 32;
-    static constexpr uint32 GOBGROUP_RUNTIME_CHUNK_SIZE = 16;
-    static constexpr uint32 GOBGROUP_RUNTIME_BUDGET_MS = 2;
+    // Runtime Apply is no longer chunked across map ticks (see noble_next_gobgroup_batch.*).
+    // Kept as aliases for telemetry / status compatibility.
+    static constexpr uint32 GOBGROUP_RUNTIME_CHUNK_SIZE = 0;
+    static constexpr uint32 GOBGROUP_RUNTIME_BUDGET_MS = 0;
     static constexpr float GOBGROUP_POS_EPSILON = 0.05f;
     static constexpr float GOBGROUP_ORI_EPSILON = 0.02f;
     static constexpr float GOBGROUP_QUAT_EPSILON = 0.001f;

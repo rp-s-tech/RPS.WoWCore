@@ -3,6 +3,7 @@
  */
 
 #include "noble_next_gobgroup_mgr.h"
+#include "noble_next_gobgroup_batch.h"
 
 #include "DB2Stores.h"
 #include "GameEventMgr.h"
@@ -597,6 +598,62 @@ bool GobGroupMgr::TryGetGroupSpawnIds(ObjectGuid::LowType anyGuid, std::vector<u
     return true;
 }
 
+bool GobGroupMgr::TryGetRelativeSnapshot(ObjectGuid::LowType anyGuid, GobGroupRelativeSnapshot& out, std::string& error) const
+{
+    out = {};
+    std::scoped_lock lock(_mutex);
+    ResolvedGroup resolved;
+    if (!RequireGroupUnlocked(anyGuid, resolved, error))
+        return false;
+
+    GroupRecord const* group = FindGroup(resolved.RootGuid);
+    if (!group)
+    {
+        error = Trinity::StringFormat("Group root {} not found", resolved.RootGuid);
+        return false;
+    }
+
+    GameObjectData const* rootData = sObjectMgr->GetGameObjectData(group->RootGuid);
+    if (!rootData)
+    {
+        error = Trinity::StringFormat("Root spawn {} missing GameObjectData", group->RootGuid);
+        return false;
+    }
+
+    out.RootGuid = group->RootGuid;
+    out.Name = group->Name;
+    out.Members.reserve(group->Members.size() + 1);
+
+    GobGroupRelativeMember rootMember;
+    rootMember.SpawnId = group->RootGuid;
+    rootMember.Entry = rootData->id;
+    rootMember.Relative.RelativeRotation = QuaternionData(0.f, 0.f, 0.f, 1.f);
+    out.Members.push_back(rootMember);
+
+    for (ObjectGuid::LowType memberGuid : group->Members)
+    {
+        GameObjectData const* memberData = sObjectMgr->GetGameObjectData(memberGuid);
+        if (!memberData)
+        {
+            error = Trinity::StringFormat("Member spawn {} missing GameObjectData", memberGuid);
+            return false;
+        }
+        auto relIt = group->Relatives.find(memberGuid);
+        if (relIt == group->Relatives.end())
+        {
+            error = Trinity::StringFormat("Member {} missing relative transform", memberGuid);
+            return false;
+        }
+
+        GobGroupRelativeMember row;
+        row.SpawnId = memberGuid;
+        row.Entry = memberData->id;
+        row.Relative = relIt->second;
+        out.Members.push_back(row);
+    }
+    return true;
+}
+
 void GobGroupMgr::SetActiveRoot(uint32 accountId, ObjectGuid::LowType anyGuid)
 {
     std::scoped_lock lock(_mutex);
@@ -690,6 +747,75 @@ bool GobGroupMgr::Create(Player* player, ObjectGuid::LowType rootGuid, std::stri
     group.Name = groupName;
     group.CreatedBy = player->GetSession()->GetAccountId();
     _groups.emplace(rootGuid, std::move(group));
+    _activeRootByAccount[player->GetSession()->GetAccountId()] = rootGuid;
+    return true;
+}
+
+bool GobGroupMgr::PublishSpawnedGroup(Player* player, ObjectGuid::LowType rootGuid, std::string const& name,
+    std::vector<ObjectGuid::LowType> const& membersOrdered,
+    std::unordered_map<ObjectGuid::LowType, MemberRelativeTransform> const& relatives,
+    std::string& error)
+{
+    if (!player)
+    {
+        error = "Player required";
+        return false;
+    }
+    if (!rootGuid || membersOrdered.empty() || membersOrdered.front() != rootGuid)
+    {
+        error = "PublishSpawnedGroup requires membersOrdered with root first";
+        return false;
+    }
+    if (membersOrdered.size() > 1 + GOBGROUP_MAX_MEMBERS)
+    {
+        error = Trinity::StringFormat("Group exceeds max members ({})", GOBGROUP_MAX_MEMBERS);
+        return false;
+    }
+
+    std::scoped_lock lock(_mutex);
+    if (_groups.find(rootGuid) != _groups.end())
+    {
+        error = Trinity::StringFormat("Group root {} already published", rootGuid);
+        return false;
+    }
+    for (ObjectGuid::LowType guid : membersOrdered)
+    {
+        if (_memberToRoot.find(guid) != _memberToRoot.end() || _groups.find(guid) != _groups.end())
+        {
+            error = Trinity::StringFormat("Spawn {} already belongs to a published group", guid);
+            return false;
+        }
+        if (!sObjectMgr->GetGameObjectData(guid))
+        {
+            error = Trinity::StringFormat("Spawn {} missing GameObjectData", guid);
+            return false;
+        }
+    }
+
+    std::string groupName = name;
+    utf8truncate(groupName, 100);
+
+    GroupRecord group;
+    group.RootGuid = rootGuid;
+    group.Name = groupName;
+    group.CreatedBy = player->GetSession()->GetAccountId();
+    group.Members.reserve(membersOrdered.size() > 1 ? membersOrdered.size() - 1 : 0);
+    for (size_t i = 1; i < membersOrdered.size(); ++i)
+    {
+        ObjectGuid::LowType const memberGuid = membersOrdered[i];
+        auto relIt = relatives.find(memberGuid);
+        if (relIt == relatives.end())
+        {
+            error = Trinity::StringFormat("Missing relative transform for member {}", memberGuid);
+            return false;
+        }
+        group.Members.push_back(memberGuid);
+        group.Relatives[memberGuid] = relIt->second;
+    }
+    std::sort(group.Members.begin(), group.Members.end());
+
+    _groups.emplace(rootGuid, std::move(group));
+    IndexGroup(_groups[rootGuid]);
     _activeRootByAccount[player->GetSession()->GetAccountId()] = rootGuid;
     return true;
 }
@@ -1124,7 +1250,11 @@ std::string GobGroupMgr::BuildStatus(ObjectGuid::LowType anyGuid) const
     oss << " job=" << PhaseName(job.Phase)
         << " go=" << job.Plan.Rows.size()
         << " sqlChunks=" << job.SqlChunks
-        << " runtimeChunks=" << job.RuntimeChunks;
+        << " runtimeChunks=" << job.RuntimeChunks
+        << " dbMs=" << job.DbElapsedMs
+        << " runtimeMs=" << job.RuntimeElapsedMs
+        << " queueMs=" << job.QueueWaitMs
+        << " goPerSec=" << job.Telemetry.EffectiveGoPerSec;
     if (!job.Error.empty())
         oss << " error=" << job.Error;
     return oss.str();
@@ -1716,6 +1846,7 @@ bool GobGroupMgr::EnqueueTransform(ObjectGuid::LowType rootGuid, Position const&
     }
 
     job->Phase = JobPhase::Calculated;
+    job->QueuedAtMs = getMSTime();
     job->SqlChunks = uint32((job->Plan.Rows.size() + GOBGROUP_SQL_CHUNK_SIZE - 1) / GOBGROUP_SQL_CHUNK_SIZE);
     _jobs[rootGuid] = std::move(job);
 
@@ -1749,6 +1880,7 @@ bool GobGroupMgr::StartJobDb(GroupJob& job)
             sizeCase.str(), inList.str()).c_str());
     }
     job.Phase = JobPhase::DbPending;
+    job.DbStartMs = getMSTime();
 
     ObjectGuid::LowType rootGuid = job.RootGuid;
     TransactionCallback callback = WorldDatabase.AsyncCommitTransaction(trans);
@@ -1761,10 +1893,13 @@ bool GobGroupMgr::StartJobDb(GroupJob& job)
             return;
 
         GroupJob& active = *it->second;
+        active.DbElapsedMs = GetMSTimeDiffToNow(active.DbStartMs);
         if (!success)
         {
             active.Phase = JobPhase::Failed;
             active.Error = "Async DB commit failed";
+            GobGroupBatch::FinalizeTelemetry(active.Telemetry, uint32(active.Plan.Rows.size()),
+                active.SqlChunks, active.DbElapsedMs, 0, 0, GobGroupBatchTelemetry::Result::Failed);
             if (GroupRecord* group = mgr.FindGroup(rootGuid))
                 group->LastError = active.Error;
             return;
@@ -1802,58 +1937,74 @@ void GobGroupMgr::ScheduleRuntime(GroupJob& job)
     if (!map)
     {
         // Unloaded continent: apply cache/grid only from world thread path.
-        // Still safe: no live GO to hide/show.
-        if (job.Stage == RuntimeStage::Hide)
+        // Still safe: no live GO to hide/show. Whole plan in one pass (no chunks).
+        if (job.Stage == RuntimeStage::Hide || job.Stage == RuntimeStage::Apply)
         {
-            job.Stage = RuntimeStage::Apply;
-            job.RuntimeIndex = 0;
-        }
-
-        if (job.Stage == RuntimeStage::Apply)
-        {
-            for (; job.RuntimeIndex < job.Plan.Rows.size(); ++job.RuntimeIndex)
+            if (!job.RuntimeStartMs)
+                job.RuntimeStartMs = getMSTime();
+            GobGroupBatch::ApplyPlanToCache(job.Plan, job.Error);
+            if (!job.Error.empty())
             {
-                GroupTransformRow const& row = job.Plan.Rows[job.RuntimeIndex];
-                GameObjectData* data = const_cast<GameObjectData*>(sObjectMgr->GetGameObjectData(row.SpawnId));
-                if (!data)
-                {
-                    job.Error = Trinity::StringFormat("Spawn {} disappeared during cache apply", row.SpawnId);
-                    if (GroupRecord* group = FindGroup(job.RootGuid))
-                        MarkDirty(*group, job.Error);
-                    continue;
-                }
-
-                bool const gridChanged = row.OldMapId != row.NewMapId
-                    || Trinity::ComputeGridCoord(row.OldWorld.GetPositionX(), row.OldWorld.GetPositionY())
-                        != Trinity::ComputeGridCoord(row.NewWorld.GetPositionX(), row.NewWorld.GetPositionY());
-
-                if (gridChanged)
-                    sObjectMgr->RemoveGameobjectFromGrid(data);
-
-                data->mapId = row.NewMapId;
-                data->spawnPoint.Relocate(row.NewWorld);
-                data->rotation = row.NewRotation;
-
-                if (gridChanged)
-                    sObjectMgr->AddGameobjectToGrid(data);
+                if (GroupRecord* group = FindGroup(job.RootGuid))
+                    MarkDirty(*group, job.Error);
             }
             job.Stage = RuntimeStage::Reveal;
-            job.RuntimeIndex = 0;
-            ScheduleRuntime(job);
-            return;
         }
 
         // No map to reveal on — treat as complete (will appear on grid load).
         job.Stage = RuntimeStage::Done;
+        job.RuntimeElapsedMs = job.RuntimeStartMs ? GetMSTimeDiffToNow(job.RuntimeStartMs) : 0;
         job.Phase = job.Error.empty() ? JobPhase::Completed : JobPhase::Failed;
+        GobGroupBatch::FinalizeTelemetry(job.Telemetry, uint32(job.Plan.Rows.size()), job.SqlChunks,
+            job.DbElapsedMs, job.RuntimeElapsedMs, job.QueueWaitMs,
+            job.Error.empty() ? GobGroupBatchTelemetry::Result::Completed : GobGroupBatchTelemetry::Result::Failed);
+        if (GroupRecord* group = FindGroup(job.RootGuid))
+        {
+            if (job.Error.empty())
+                group->LastError.clear();
+            else
+                group->LastError = job.Error;
+        }
         return;
     }
 
+    // One heavy runtime publish per map: queue whole groups, never split members.
+    if (_mapRuntimeActive.find(scheduleMapId) != _mapRuntimeActive.end())
+    {
+        auto& q = _mapRuntimeQueue[scheduleMapId];
+        if (std::find(q.begin(), q.end(), job.RootGuid) == q.end())
+            q.push_back(job.RootGuid);
+        return;
+    }
+
+    _mapRuntimeActive.insert(scheduleMapId);
     ObjectGuid::LowType rootGuid = job.RootGuid;
     map->AddFarSpellCallback([rootGuid](Map* mapCtx)
     {
         GobGroupMgr::Instance().ProcessRuntime(mapCtx, rootGuid);
     });
+}
+
+void GobGroupMgr::FinishMapRuntime(uint32 mapId, ObjectGuid::LowType finishedRoot)
+{
+    _mapRuntimeActive.erase(mapId);
+    auto qIt = _mapRuntimeQueue.find(mapId);
+    if (qIt == _mapRuntimeQueue.end() || qIt->second.empty())
+        return;
+
+    // Drop finished root if it was queued again somehow.
+    auto& q = qIt->second;
+    q.erase(std::remove(q.begin(), q.end(), finishedRoot), q.end());
+    while (!q.empty())
+    {
+        ObjectGuid::LowType nextRoot = q.front();
+        q.pop_front();
+        auto jobIt = _jobs.find(nextRoot);
+        if (jobIt == _jobs.end() || !jobIt->second || jobIt->second->Phase != JobPhase::RuntimePending)
+            continue;
+        ScheduleRuntime(*jobIt->second);
+        return;
+    }
 }
 
 void GobGroupMgr::ProcessRuntime(Map* map, ObjectGuid::LowType rootGuid)
@@ -1864,138 +2015,77 @@ void GobGroupMgr::ProcessRuntime(Map* map, ObjectGuid::LowType rootGuid)
     std::scoped_lock lock(_mutex);
     auto it = _jobs.find(rootGuid);
     if (it == _jobs.end() || !it->second)
+    {
+        FinishMapRuntime(map->GetId(), rootGuid);
         return;
+    }
 
     GroupJob& job = *it->second;
     if (job.Phase != JobPhase::RuntimePending)
+    {
+        FinishMapRuntime(map->GetId(), rootGuid);
         return;
+    }
 
-    uint32 const startMs = getMSTime();
+    if (!job.RuntimeStartMs)
+    {
+        job.RuntimeStartMs = getMSTime();
+        if (job.QueuedAtMs)
+            job.QueueWaitMs = getMSTimeDiff(job.QueuedAtMs, job.RuntimeStartMs);
+    }
     ++job.RuntimeChunks;
 
-    auto findLive = [&](ObjectGuid::LowType spawnId) -> GameObject*
+    // Cross-map: stage 1 on source (Hide + ApplyAll), stage 2 on target (RevealAll).
+    if (job.Plan.CrossMap && job.Stage != RuntimeStage::Reveal)
     {
-        auto bounds = map->GetGameObjectBySpawnIdStore().equal_range(spawnId);
-        for (auto itr = bounds.first; itr != bounds.second; ++itr)
-            if (itr->second)
-                return itr->second;
-        return nullptr;
-    };
-
-    if (job.Stage == RuntimeStage::Hide)
-    {
-        for (GroupTransformRow const& row : job.Plan.Rows)
+        GobGroupBatch::HideLive(map, job.Plan);
+        GobGroupBatch::ApplyPlanToCache(job.Plan, job.Error);
+        if (!job.Error.empty())
         {
-            if (GameObject* go = findLive(row.SpawnId))
-            {
-                go->DestroyForNearbyPlayers();
-                go->Delete();
-            }
+            if (GroupRecord* group = FindGroup(rootGuid))
+                MarkDirty(*group, job.Error);
         }
-        job.Stage = RuntimeStage::Apply;
-        job.RuntimeIndex = 0;
-        ScheduleRuntime(job);
-        return;
-    }
-
-    if (job.Stage == RuntimeStage::Apply)
-    {
-        uint32 processed = 0;
-        while (job.RuntimeIndex < job.Plan.Rows.size()
-            && processed < GOBGROUP_RUNTIME_CHUNK_SIZE
-            && GetMSTimeDiffToNow(startMs) < GOBGROUP_RUNTIME_BUDGET_MS)
-        {
-            GroupTransformRow const& row = job.Plan.Rows[job.RuntimeIndex++];
-            GameObjectData* data = const_cast<GameObjectData*>(sObjectMgr->GetGameObjectData(row.SpawnId));
-            if (!data)
-            {
-                job.Error = Trinity::StringFormat("Spawn {} disappeared during runtime apply", row.SpawnId);
-                if (GroupRecord* group = FindGroup(rootGuid))
-                    MarkDirty(*group, job.Error);
-                continue;
-            }
-
-            bool const gridChanged = row.OldMapId != row.NewMapId
-                || Trinity::ComputeGridCoord(row.OldWorld.GetPositionX(), row.OldWorld.GetPositionY())
-                    != Trinity::ComputeGridCoord(row.NewWorld.GetPositionX(), row.NewWorld.GetPositionY());
-
-            if (gridChanged)
-                sObjectMgr->RemoveGameobjectFromGrid(data);
-
-            data->mapId = row.NewMapId;
-            data->spawnPoint.Relocate(row.NewWorld);
-            data->rotation = row.NewRotation;
-
-            if (gridChanged)
-                sObjectMgr->AddGameobjectToGrid(data);
-
-            ++processed;
-        }
-
-        if (job.RuntimeIndex < job.Plan.Rows.size())
-        {
-            ScheduleRuntime(job);
-            return;
-        }
-
         job.Stage = RuntimeStage::Reveal;
-        job.RuntimeIndex = 0;
+        FinishMapRuntime(map->GetId(), rootGuid);
         ScheduleRuntime(job);
         return;
     }
 
-    if (job.Stage == RuntimeStage::Reveal)
+    if (job.Plan.CrossMap && job.Stage == RuntimeStage::Reveal && map->GetId() != job.Plan.TargetMapId)
     {
-        // Final reveal of the whole group in one phase (budget measured separately).
-        Map* revealMap = map;
-        if (job.Plan.CrossMap)
-        {
-            revealMap = sMapMgr->FindMap(job.Plan.TargetMapId, 0);
-            if (!revealMap)
-            {
-                job.Stage = RuntimeStage::Done;
-                job.Phase = job.Error.empty() ? JobPhase::Completed : JobPhase::Failed;
-                if (!job.Error.empty())
-                {
-                    if (GroupRecord* group = FindGroup(rootGuid))
-                        group->LastError = job.Error;
-                }
-                return;
-            }
-            if (revealMap != map)
-            {
-                ObjectGuid::LowType rg = rootGuid;
-                revealMap->AddFarSpellCallback([rg](Map* m)
-                {
-                    GobGroupMgr::Instance().ProcessRuntime(m, rg);
-                });
-                return;
-            }
-        }
-
-        for (GroupTransformRow const& row : job.Plan.Rows)
-        {
-            if (!revealMap->IsGridLoaded(row.NewWorld))
-                continue;
-
-            if (!GameObject::CreateGameObjectFromDB(row.SpawnId, revealMap, true))
-            {
-                job.Error = Trinity::StringFormat("Failed to recreate spawn {} on map {}", row.SpawnId, row.NewMapId);
-                if (GroupRecord* group = FindGroup(rootGuid))
-                    MarkDirty(*group, job.Error);
-            }
-        }
-
-        job.Stage = RuntimeStage::Done;
-        job.Phase = job.Error.empty() ? JobPhase::Completed : JobPhase::Failed;
-        if (GroupRecord* group = FindGroup(rootGuid))
-        {
-            if (job.Error.empty())
-                group->LastError.clear();
-            else
-                group->LastError = job.Error;
-        }
+        FinishMapRuntime(map->GetId(), rootGuid);
+        ScheduleRuntime(job);
+        return;
     }
+
+    // Same-map (or target-map reveal): whole group without yield.
+    if (!job.Plan.CrossMap)
+        GobGroupBatch::RelocateExisting(map, job.Plan, job.Error);
+    else
+        GobGroupBatch::RevealAll(map, job.Plan, job.Error);
+
+    if (!job.Error.empty())
+    {
+        if (GroupRecord* group = FindGroup(rootGuid))
+            MarkDirty(*group, job.Error);
+    }
+
+    job.Stage = RuntimeStage::Done;
+    job.RuntimeElapsedMs = GetMSTimeDiffToNow(job.RuntimeStartMs);
+    job.Phase = job.Error.empty() ? JobPhase::Completed : JobPhase::Failed;
+    GobGroupBatch::FinalizeTelemetry(job.Telemetry, uint32(job.Plan.Rows.size()), job.SqlChunks,
+        job.DbElapsedMs, job.RuntimeElapsedMs, job.QueueWaitMs,
+        job.Error.empty() ? GobGroupBatchTelemetry::Result::Completed : GobGroupBatchTelemetry::Result::Failed);
+
+    if (GroupRecord* group = FindGroup(rootGuid))
+    {
+        if (job.Error.empty())
+            group->LastError.clear();
+        else
+            group->LastError = job.Error;
+    }
+
+    FinishMapRuntime(map->GetId(), rootGuid);
 }
 
 void GobGroupMgr::CompleteJob(ObjectGuid::LowType rootGuid, bool success, std::string const& error)

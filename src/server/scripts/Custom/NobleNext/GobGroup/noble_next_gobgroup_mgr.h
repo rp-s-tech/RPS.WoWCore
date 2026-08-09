@@ -8,14 +8,17 @@
 #include "ObjectGuid.h"
 #include "Optional.h"
 #include "Position.h"
+#include "noble_next_gobgroup_batch.h"
 #include "noble_next_gobgroup_transform.h"
 
 #include "DatabaseEnv.h"
 
+#include <deque>
 #include <memory>
 #include <mutex>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 class Map;
@@ -93,6 +96,21 @@ namespace RoleplayCore::NobleNext
         std::string JobState; // None|Queued|Calculated|DbPending|RuntimePending|Completed|Failed
     };
 
+    // Relative composition for GobBlueprint capture (root first; root relative is identity).
+    struct GobGroupRelativeMember
+    {
+        ObjectGuid::LowType SpawnId = 0;
+        uint32 Entry = 0;
+        MemberRelativeTransform Relative;
+    };
+
+    struct GobGroupRelativeSnapshot
+    {
+        ObjectGuid::LowType RootGuid = 0;
+        std::string Name;
+        std::vector<GobGroupRelativeMember> Members; // index 0 = root
+    };
+
     class GobGroupMgr
     {
     public:
@@ -110,6 +128,7 @@ namespace RoleplayCore::NobleNext
         // Returns root + members for an existing group. Used by logical phase
         // assignment to keep a spatial group in one context atomically.
         bool TryGetGroupSpawnIds(ObjectGuid::LowType anyGuid, std::vector<uint64>& outSpawnIds) const;
+        bool TryGetRelativeSnapshot(ObjectGuid::LowType anyGuid, GobGroupRelativeSnapshot& out, std::string& error) const;
 
         // active group per account (UI context only; mutations take explicit GUID)
         void SetActiveRoot(uint32 accountId, ObjectGuid::LowType anyGuid);
@@ -117,6 +136,12 @@ namespace RoleplayCore::NobleNext
 
         // CRUD / metadata — groupGuid resolves root|member → canonical root
         bool Create(Player* player, ObjectGuid::LowType rootGuid, std::string const& name, std::string& error);
+        // Atomic in-memory publish for blueprint spawn (DB rows already committed).
+        // Does not touch world/roleplay DB. update never iterates world groups.
+        bool PublishSpawnedGroup(Player* player, ObjectGuid::LowType rootGuid, std::string const& name,
+            std::vector<ObjectGuid::LowType> const& membersOrdered /* root first */,
+            std::unordered_map<ObjectGuid::LowType, MemberRelativeTransform> const& relatives,
+            std::string& error);
         bool AddMember(ObjectGuid::LowType groupGuid, ObjectGuid::LowType memberGuid, std::string& error);
         bool RemoveMember(ObjectGuid::LowType groupGuid, ObjectGuid::LowType memberGuid, std::string& error);
         bool Dissolve(ObjectGuid::LowType groupGuid, std::string& error);
@@ -203,6 +228,13 @@ namespace RoleplayCore::NobleNext
             size_t RuntimeIndex = 0;
             uint32 SqlChunks = 0;
             uint32 RuntimeChunks = 0;
+            uint32 QueuedAtMs = 0;
+            uint32 DbStartMs = 0;
+            uint32 DbElapsedMs = 0;
+            uint32 RuntimeStartMs = 0;
+            uint32 RuntimeElapsedMs = 0;
+            uint32 QueueWaitMs = 0;
+            GobGroupBatchTelemetry Telemetry;
             std::string Error;
             bool UpdateMap = false;
         };
@@ -212,6 +244,9 @@ namespace RoleplayCore::NobleNext
         std::unordered_map<ObjectGuid::LowType, ObjectGuid::LowType> _memberToRoot;
         std::unordered_map<uint32, ObjectGuid::LowType> _activeRootByAccount;
         std::unordered_map<ObjectGuid::LowType, std::unique_ptr<GroupJob>> _jobs;
+        // One heavy runtime publish per map; whole groups only.
+        std::unordered_set<uint32> _mapRuntimeActive;
+        std::unordered_map<uint32, std::deque<ObjectGuid::LowType>> _mapRuntimeQueue;
 
         struct ResolvedGroup
         {
@@ -261,6 +296,7 @@ namespace RoleplayCore::NobleNext
         bool StartJobDb(GroupJob& job);
         void ProcessRuntime(Map* map, ObjectGuid::LowType rootGuid);
         void ScheduleRuntime(GroupJob& job);
+        void FinishMapRuntime(uint32 mapId, ObjectGuid::LowType finishedRoot);
         void CompleteJob(ObjectGuid::LowType rootGuid, bool success, std::string const& error);
         char const* PhaseName(JobPhase phase) const;
 

@@ -4,6 +4,7 @@
 
 #include "noble_next_gobgroup_protocol.h"
 #include "noble_next_gobgroup_mgr.h"
+#include "../GobBlueprint/noble_next_gobblueprint_mgr.h"
 
 #include "ChatPackets.h"
 #include "Player.h"
@@ -60,6 +61,18 @@ namespace
         { "gobject.group.relocate",     rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_RELOCATE },
         { "gobject.group.reload",       rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_RELOAD },
         { "gobject.group.cleanup",      rbac::RBAC_PERM_COMMAND_GOBJECT_GROUP_CLEANUP },
+        { "gobject.blueprint",          rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT },
+        { "gobject.blueprint.help",     rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_HELP },
+        { "gobject.blueprint.list",     rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_LIST },
+        { "gobject.blueprint.info",     rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_INFO },
+        { "gobject.blueprint.new",      rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_NEW },
+        { "gobject.blueprint.update",   rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_UPDATE },
+        { "gobject.blueprint.spawn",    rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_SPAWN },
+        { "gobject.blueprint.delete",   rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_DELETE },
+        { "gobject.blueprint.rename",   rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_RENAME },
+        { "gobject.blueprint.set-public", rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_SET_PUBLIC },
+        { "gobject.blueprint.member",   rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_MEMBER },
+        { "gobject.blueprint.staff",    rbac::RBAC_PERM_COMMAND_GOBJECT_BLUEPRINT_STAFF },
     };
 
     std::string FormatCoord(float value)
@@ -297,6 +310,79 @@ void SendStatus(Player* player, GobGroupStatusSnapshot const& snap)
         snap.Dirty ? 1 : 0,
         snap.Busy ? 1 : 0,
         EscapeField(snap.JobState)));
+}
+
+void SendBlueprintList(Player* player, std::vector<GobBlueprintListItem> const& items, std::string_view filter)
+{
+    if (!player)
+        return;
+
+    // BEGIN|filter|count
+    // ROW|key|id|owner|name|members|public|canMutate|description
+    SendRaw(player, Trinity::StringFormat("BLUEPRINT_LIST_BEGIN|{}|{}",
+        EscapeField(filter), items.size()));
+    for (GobBlueprintListItem const& item : items)
+    {
+        SendRaw(player, Trinity::StringFormat("BLUEPRINT_LIST_ROW|{}|{}|{}|{}|{}|{}|{}|{}",
+            EscapeField(item.Key()),
+            item.Id,
+            item.OwnerAccountId,
+            EscapeField(item.Name),
+            item.MemberCount,
+            item.IsPublic ? 1 : 0,
+            item.CanMutate ? 1 : 0,
+            EscapeField(item.Description)));
+    }
+    SendRaw(player, "BLUEPRINT_LIST_END");
+}
+
+void SendBlueprintInfo(Player* player, GobBlueprintRecord const& record)
+{
+    if (!player)
+        return;
+
+    // INFO|key|id|owner|name|physMembers|public|canMutate|canSetPublic|virtualRoot|description
+    SendRaw(player, Trinity::StringFormat("BLUEPRINT_INFO|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+        EscapeField(record.Key()),
+        record.Id,
+        record.OwnerAccountId,
+        EscapeField(record.Name),
+        record.PhysicalMemberCount(),
+        record.IsPublic ? 1 : 0,
+        record.CanMutate ? 1 : 0,
+        record.CanSetPublic ? 1 : 0,
+        record.HasVirtualRoot() ? 1 : 0,
+        EscapeField(record.Description)));
+
+    for (GobBlueprintPart const& part : record.Parts)
+    {
+        char const* typeName = "base";
+        if (part.Type == GobBlueprintPartType::Object)
+            typeName = "object";
+        else if (part.Type == GobBlueprintPartType::Group)
+            typeName = "group";
+        SendRaw(player, Trinity::StringFormat("BLUEPRINT_INFO_PART|{}|{}|{}|{}",
+            part.Id, typeName, EscapeField(part.Label), part.SourceRootGuid));
+    }
+
+    // MEMBER|id|partId|sort|isRoot|entry
+    for (GobBlueprintMember const& member : record.Members)
+    {
+        SendRaw(player, Trinity::StringFormat("BLUEPRINT_INFO_MEMBER|{}|{}|{}|{}|{}",
+            member.Id, member.PartId, member.SortOrder, member.IsRoot ? 1 : 0, member.Entry));
+    }
+    SendRaw(player, Trinity::StringFormat("BLUEPRINT_INFO_END|{}", EscapeField(record.Key())));
+}
+
+void SendBlueprintResult(Player* player, std::string_view verb, std::string_view status, std::string_view detail)
+{
+    SendRaw(player, Trinity::StringFormat("BLUEPRINT_RESULT|{}|{}|{}",
+        EscapeField(verb), EscapeField(status), EscapeField(detail)));
+}
+
+void SendBlueprintStatus(Player* player, std::string_view statusLine)
+{
+    SendRaw(player, Trinity::StringFormat("BLUEPRINT_STATUS|{}", EscapeField(statusLine)));
 }
 
 } // namespace GobGroupProtocol

@@ -20,6 +20,8 @@ namespace RoleplayCore::NobleNext
     struct GobGroupListSnapshot;
     struct GobGroupNearSnapshot;
     struct GobGroupStatusSnapshot;
+    struct GobBlueprintListItem;
+    struct GobBlueprintRecord;
 
     namespace GobGroupProtocol
     {
@@ -36,5 +38,11 @@ namespace RoleplayCore::NobleNext
         void SendList(Player* player, GobGroupListSnapshot const& snap);
         void SendNear(Player* player, GobGroupNearSnapshot const& snap);
         void SendStatus(Player* player, GobGroupStatusSnapshot const& snap);
+
+        // GobBlueprint (same NN_GOBGROUP prefix)
+        void SendBlueprintList(Player* player, std::vector<GobBlueprintListItem> const& items, std::string_view filter);
+        void SendBlueprintInfo(Player* player, GobBlueprintRecord const& record);
+        void SendBlueprintResult(Player* player, std::string_view verb, std::string_view status, std::string_view detail = {});
+        void SendBlueprintStatus(Player* player, std::string_view statusLine);
     }
 }
