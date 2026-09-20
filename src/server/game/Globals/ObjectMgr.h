@@ -947,16 +947,17 @@ struct ClassAvailability
     uint8 MinActiveExpansionLevel = 0;
 };
 
-struct RaceClassAvailability
-{
-    uint8 RaceID = 0;
-    std::vector<ClassAvailability> Classes;
-};
-
 struct RaceUnlockRequirement
 {
     uint8 Expansion;
     uint32 AchievementId;
+};
+
+struct RaceClassAvailability
+{
+    uint8 RaceID = 0;
+    RaceUnlockRequirement UnlockRequirement;
+    std::vector<ClassAvailability> Classes;
 };
 
 enum QueryDataGroup
@@ -1159,6 +1160,7 @@ class TC_GAME_API ObjectMgr
         uint32 GetAreaTriggerScriptId(uint32 trigger_id) const;
         uint32 GetEventScriptId(uint32 eventId) const;
         SpellScriptsBounds GetSpellScriptsBounds(uint32 spellId);
+        bool HasEnabledSpellScript(uint32 spellId, std::string_view scriptName);
 
         RepRewardRate const* GetRepRewardRate(uint32 factionId) const
         {
@@ -1681,16 +1683,8 @@ class TC_GAME_API ObjectMgr
 
         std::string GetPhaseName(uint32 phaseId) const;
 
-        std::unordered_map<uint8, RaceUnlockRequirement> const& GetRaceUnlockRequirements() const { return _raceUnlockRequirementStore; }
-        RaceUnlockRequirement const* GetRaceUnlockRequirement(uint8 race) const
-        {
-            auto itr = _raceUnlockRequirementStore.find(race);
-            if (itr != _raceUnlockRequirementStore.end())
-                return &itr->second;
-            return nullptr;
-        }
-
-        std::vector<RaceClassAvailability> const& GetClassExpansionRequirements() const { return _classExpansionRequirementStore; }
+        std::vector<RaceClassAvailability> const& GetRaceClassRequirements() const { return _raceClassRequirementStore; }
+        RaceUnlockRequirement const* GetRaceUnlockRequirement(uint8 raceId) const;
         ClassAvailability const* GetClassExpansionRequirement(uint8 raceId, uint8 classId) const;
         ClassAvailability const* GetClassExpansionRequirementFallback(uint8 classId) const;
 
@@ -1891,8 +1885,7 @@ class TC_GAME_API ObjectMgr
         std::unordered_map<uint32, Trainer::Trainer> _trainers;
         std::map<std::tuple<uint32, uint32, uint32>, uint32> _creatureDefaultTrainers;
 
-        std::unordered_map<uint8, RaceUnlockRequirement> _raceUnlockRequirementStore;
-        std::vector<RaceClassAvailability> _classExpansionRequirementStore;
+        std::vector<RaceClassAvailability> _raceClassRequirementStore;
         RealmNameContainer _realmNameStore;
 
         SceneTemplateContainer _sceneTemplateStore;

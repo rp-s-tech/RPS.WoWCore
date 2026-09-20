@@ -20,6 +20,8 @@
 #include "Account.h"
 #include "AccountMgr.h"
 #include "AchievementMgr.h"
+#include "ArchaeologyMgr.h"
+#include "ArchaeologyPackets.h"
 #include "ArenaTeam.h"
 #include "ArenaTeamMgr.h"
 #include "AzeriteEmpoweredItem.h"
@@ -66,6 +68,7 @@
 #include "GarrisonMgr.h"
 #include "GitRevision.h"
 #include "GossipDef.h"
+#include "GridDefines.h"
 #include "GridNotifiers.h"
 #include "GridNotifiersImpl.h"
 #include "Group.h"
@@ -108,6 +111,7 @@
 #include "PhasingHandler.h"
 #include "RoleplayTerrainPresetService.h"
 #include "PlayerChoice.h"
+#include "QuaternionData.h"
 #include "QueryCallback.h"
 #include "QueryHolder.h"
 #include "QueryResultStructured.h"
@@ -154,6 +158,7 @@
 #include "WorldStatePackets.h"
 #include <boost/dynamic_bitset.hpp>
 #include <G3D/g3dmath.h>
+#include <cmath>
 #include <sstream>
 
 // corpse reclaim times
@@ -163,6 +168,7 @@
 enum PlayerSpells
 {
     SPELL_EXPERIENCE_ELIMINATED = 206662,
+    SPELL_ARCHAEOLOGY_STANDING_ON_IT = 210837,
 };
 
 static uint32 corpseReclaimDelay[MAX_DEATH_COUNT] = { 30, 60, 120 };
@@ -1229,9 +1235,9 @@ void Player::ToggleDND()
         SetPlayerFlag(PLAYER_FLAGS_DND);
 }
 
-uint16 Player::GetChatFlags() const
+uint32 Player::GetChatFlags() const
 {
-    uint16 tag = CHAT_FLAG_NONE;
+    uint32 tag = CHAT_FLAG_NONE;
 
     if (isGMChat())
         tag |= CHAT_FLAG_GM;
@@ -1682,6 +1688,19 @@ void Player::Regenerate(Powers power)
 
     int32 curValue = GetPower(power);
     float addvalue = GetPowerRegen(power) * 0.001f * m_regenTimer;
+
+    // Vigor regen scales with forward velocity during advanced flying
+    if (power == POWER_ALTERNATE_MOUNT && m_movementInfo.HasMovementFlag(MOVEMENTFLAG_ADV_FLYING) && m_movementInfo.advFlying)
+    {
+        if (FlightCapabilityEntry const* flightCapability = sFlightCapabilityStore.LookupEntry(GetFlightCapabilityID()))
+        {
+            if (flightCapability->VigorRegenMaxVelCoefficient > 0.0f && flightCapability->MaxVel > 0.0f)
+            {
+                float velocityPct = std::min(m_movementInfo.advFlying->forwardVelocity / flightCapability->MaxVel, 1.0f);
+                addvalue *= 1.0f + velocityPct * flightCapability->VigorRegenMaxVelCoefficient;
+            }
+        }
+    }
 
     int32 minPower = powerType->MinPower;
     int32 maxPower = GetMaxPower(power);
@@ -2328,12 +2347,19 @@ void Player::GiveLevel(uint8 level)
     if (level > oldLevel)
         UpdateCriteria(CriteriaType::GainLevels, level - oldLevel);
     if (IsMaxLevel())
-    {
         UpdateCriteria(CriteriaType::ReachMaxLevel);
 
-        // Blizzlike: clear Chromie Time when reaching max level
-        if (m_activePlayerData->UiChromieTimeExpansionID != 0)
-            SetChromieTime(0);
+    // Retail 12.0.x hard-exits Chromie Time at the deactivation level (81): the state is
+    // force-cleared and the player is returned to their faction capital (audit R10/M7;
+    // 12.0.1 patch note moved the threshold 61 -> 71 -> 81). The level-80 soft exit
+    // (auto-accepted return quest + capital auto-exit) is NYI - data unmined, see Player.h.
+    if (level >= ChromieTimeDeactivationLevel && m_activePlayerData->UiChromieTimeExpansionID != 0)
+    {
+        SetChromieTime(0);
+        if (GetTeam() == ALLIANCE)
+            TeleportTo(0, -8833.38f, 628.628f, 94.0066f, 1.06535f); // Stormwind
+        else
+            TeleportTo(1, 1569.97f, -4397.41f, 16.0472f, 0.543025f); // Orgrimmar
     }
 
     PushQuests();
@@ -2430,7 +2456,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
     //set create powers
     SetCreateMana(basemana);
 
-    SetArmor(int32(m_createStats[STAT_AGILITY]*2), 0);
+    SetArmor(int32(GetCreateStat(STAT_AGILITY)*2), 0);
 
     InitStatBuffMods();
 
@@ -2489,7 +2515,7 @@ void Player::InitStatsForLevel(bool reapplyMods)
     SetUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::DodgePercentage), 0.0f);
 
     // set armor (resistance 0) to original value (create_agility*2)
-    SetArmor(int32(m_createStats[STAT_AGILITY] * 2), 0);
+    SetArmor(int32(GetCreateStat(STAT_AGILITY) * 2), 0);
     SetBonusResistanceMod(SPELL_SCHOOL_NORMAL, 0);
     // set other resistance to original value (0)
     for (uint8 i = SPELL_SCHOOL_HOLY; i < MAX_SPELL_SCHOOL; ++i)
@@ -4174,6 +4200,18 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
             stmt->setUInt64(0, guid);
             trans->Append(stmt);
 
+            stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHARACTER_RESEARCH_SITE);
+            stmt->setUInt64(0, guid);
+            trans->Append(stmt);
+
+            stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHARACTER_RESEARCH_PROJECT);
+            stmt->setUInt64(0, guid);
+            trans->Append(stmt);
+
+            stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHARACTER_RESEARCH_HISTORY);
+            stmt->setUInt64(0, guid);
+            trans->Append(stmt);
+
             stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHAR_STATS);
             stmt->setUInt64(0, guid);
             trans->Append(stmt);
@@ -4351,6 +4389,8 @@ void Player::BuildPlayerRepop()
     corpse->ResetGhostTime();
 
     StopMirrorTimers();                                     //disable timers(bars)
+
+    SendDirectMessage(WorldPackets::Misc::ForcedDeathUpdate().Write());
 
     // OnPlayerRepop hook
     sScriptMgr->OnPlayerRepop(this);
@@ -5956,6 +5996,14 @@ void Player::SetSkill(uint32 id, uint16 step, uint16 newVal, uint16 maxVal)
             UpdateCriteria(CriteriaType::AchieveSkillStep, id);
         }
     }
+
+    // Archaeology: seed active dig sites and research projects the moment the profession is
+    // learned mid-session; the login path already covers players who had it when loading.
+    if (id == SKILL_ARCHAEOLOGY && newVal)
+    {
+        InitializeResearchSites();
+        InitializeResearchProjects();
+    }
 }
 
 uint32 Player::GetProfessionSkillForExp(uint32 skill, int32 expansion) const
@@ -6242,6 +6290,7 @@ bool Player::UpdatePosition(float x, float y, float z, float orientation, bool t
         SetGroupUpdateFlag(GROUP_UPDATE_FLAG_POSITION);
 
     CheckAreaExplore();
+    _UpdateArchaeologySurveyIndicator();
 
     return true;
 }
@@ -6537,11 +6586,14 @@ void Player::SetChromieTime(int32 expansionId)
 
     SetChromieTimeConditionalFlags(expansionId > 0);
 
-    // Sniffs show FactionGroup is 0 when chromie is inactive and 3/Alliance (or 5/Horde) when active.
+    // Retail keeps FactionGroup populated from the player's faction independent of chromie
+    // state and never resets it on deselect (capture A rec 2149: fg 0->3 with mask 0 before
+    // any chromie interaction; equivalents B 2229 / C 1462). Alliance = 3 (Player|Alliance)
+    // is sniff-verified; the Horde value (expected 5 = Player|Horde per FactionTemplate)
+    // is unverified - no Horde 12.0.5+ sniff exists (audit R5 deferral).
     SetUpdateFieldValue(m_values.ModifyValue(&Player::m_playerData)
         .ModifyValue(&UF::PlayerData::CtrOptions)
-        .ModifyValue(&UF::CTROptions::FactionGroup),
-        expansionId > 0 ? GetFactionGroupForRace(GetRace()) : uint8(0));
+        .ModifyValue(&UF::CTROptions::FactionGroup), GetFactionGroupForRace(GetRace()));
 
     SendCtrOptions(&previous);
     PhasingHandler::OnConditionChange(this);
@@ -8255,49 +8307,12 @@ void Player::_ApplyItemBonuses(Item* item, uint8 slot, bool apply)
 
     uint32 itemLevel = item->GetItemLevel(this);
 
+    // stat scaling uses raw (unsquished) item level for items with a scaling config offset curve
     BonusData const* bonus = item->GetBonus();
     uint32 rawItemLevel = itemLevel;
     if (bonus->ItemLevelOffsetCurveId)
-    {
-        if (bonus->ItemLevelOffsetItemLevel)
-        {
-            rawItemLevel = bonus->ItemLevelOffsetItemLevel;
-        }
-        else
-        {
-            rawItemLevel = bonus->ItemLevel;
-            if (bonus->PlayerLevelToItemLevelCurveId)
-            {
-                uint32 level = GetLevel();
-                uint32 fixedLevel = item->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL);
-                if (fixedLevel)
-                    level = fixedLevel;
-                else if (Optional<ContentTuningLevels> levels = sDB2Manager.GetContentTuningData(bonus->ContentTuningId, {}, true))
-                    level = std::min(std::max(int16(level), levels->MinLevel), levels->MaxLevel);
-                rawItemLevel = uint32(sDB2Manager.GetCurveValueAt(bonus->PlayerLevelToItemLevelCurveId, level));
-            }
-            rawItemLevel += bonus->ItemLevelBonus;
-            for (uint32 i = 0; i < MAX_ITEM_PROTO_SOCKETS; ++i)
-                rawItemLevel += bonus->GemItemLevelBonus[i];
-            rawItemLevel = std::min(std::max(rawItemLevel, uint32(MIN_ITEM_LEVEL)), uint32(MAX_ITEM_LEVEL));
-
-            float curveVal = sDB2Manager.GetCurveValueAt(bonus->ItemLevelOffsetCurveId, GetLevel());
-            int32 effective = static_cast<int32>(bonus->ItemLevelOffset) + static_cast<int32>(curveVal);
-            for (uint32 i = 0; i < MAX_ITEM_PROTO_SOCKETS; ++i)
-                effective += static_cast<int32>(bonus->GemItemLevelBonus[i]);
-            effective = std::max(effective, static_cast<int32>(MIN_ITEM_LEVEL));
-            effective = std::min(effective, static_cast<int32>(MAX_ITEM_LEVEL));
-
-            if (rawItemLevel > 0)
-            {
-                float ratio = float(effective) / float(rawItemLevel);
-                if (ratio >= 0.1f && ratio <= 10.0f)
-                    rawItemLevel = uint32(effective);
-            }
-            else
-                rawItemLevel = uint32(effective);
-        }
-    }
+        rawItemLevel = Item::GetItemLevel(proto, *bonus, GetLevel(), item->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL),
+            0, 0, 0, false, 0, item->GetModifier(ITEM_MODIFIER_CONTENT_TUNING_ID), false);
 
     float combatRatingMultiplier = 1.0f;
     if (GtCombatRatingsMultByILvl const* ratingMult = sCombatRatingsMultByILvlGameTable.GetRow(rawItemLevel))
@@ -8360,23 +8375,23 @@ void Player::_ApplyItemBonuses(Item* item, uint8 slot, bool apply)
                 HandleStatFlatModifier(UNIT_MOD_HEALTH, BASE_VALUE, float(val), apply);
                 break;
             case ITEM_MOD_AGILITY:                          // modify agility
-                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_AGILITY);
                 break;
             case ITEM_MOD_STRENGTH:                         //modify strength
-                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_STRENGTH);
                 break;
             case ITEM_MOD_INTELLECT:                        //modify intellect
-                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_INTELLECT);
                 break;
             case ITEM_MOD_SPIRIT:                           //modify spirit
-                HandleStatFlatModifier(UNIT_MOD_STAT_SPIRIT, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_SPIRIT, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_SPIRIT);
                 break;
             case ITEM_MOD_STAMINA:                          //modify stamina
-                HandleStatFlatModifier(UNIT_MOD_STAT_STAMINA, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_STAMINA, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_STAMINA);
                 break;
             case ITEM_MOD_DEFENSE_SKILL_RATING:
@@ -8540,28 +8555,28 @@ void Player::_ApplyItemBonuses(Item* item, uint8 slot, bool apply)
                 ApplyRatingMod(CR_STURDINESS, int32(val), apply);
                 break;
             case ITEM_MOD_AGI_STR_INT:
-                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, BASE_VALUE, float(val), apply);
-                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, BASE_VALUE, float(val), apply);
-                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, TOTAL_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_AGILITY);
                 UpdateStatBuffMod(STAT_STRENGTH);
                 UpdateStatBuffMod(STAT_INTELLECT);
                 break;
             case ITEM_MOD_AGI_STR:
-                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, BASE_VALUE, float(val), apply);
-                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, TOTAL_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_AGILITY);
                 UpdateStatBuffMod(STAT_STRENGTH);
                 break;
             case ITEM_MOD_AGI_INT:
-                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, BASE_VALUE, float(val), apply);
-                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_AGILITY, TOTAL_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_AGILITY);
                 UpdateStatBuffMod(STAT_INTELLECT);
                 break;
             case ITEM_MOD_STR_INT:
-                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, BASE_VALUE, float(val), apply);
-                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, BASE_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_STRENGTH, TOTAL_VALUE, float(val), apply);
+                HandleStatFlatModifier(UNIT_MOD_STAT_INTELLECT, TOTAL_VALUE, float(val), apply);
                 UpdateStatBuffMod(STAT_STRENGTH);
                 UpdateStatBuffMod(STAT_INTELLECT);
                 break;
@@ -9959,6 +9974,103 @@ uint32 Player::GetItemCountWithLimitCategory(uint32 limitCategory, Item* skipIte
     return count;
 }
 
+BagSlotFlags Player::GetItemAutoDepositCategory(Item const* item) const
+{
+    ItemTemplate const* proto = item->GetTemplate();
+    if (!proto)
+        return BagSlotFlags::None;
+
+    // Junk takes precedence (ITEM_QUALITY_POOR is grey items the user wants to vendor)
+    if (proto->GetQuality() == ITEM_QUALITY_POOR)
+        return BagSlotFlags::PriorityJunk;
+
+    // Crafting reagents (items flagged USED_IN_A_TRADESKILL) get their own bin
+    if (proto->IsCraftingReagent())
+        return BagSlotFlags::PriorityReagents;
+
+    switch (proto->GetClass())
+    {
+        case ITEM_CLASS_WEAPON:
+        case ITEM_CLASS_ARMOR:
+            return BagSlotFlags::PriorityEquipment;
+        case ITEM_CLASS_CONSUMABLE:
+            return BagSlotFlags::PriorityConsumables;
+        case ITEM_CLASS_TRADE_GOODS:
+            return BagSlotFlags::PriorityTradeGoods;
+        case ITEM_CLASS_QUEST:
+            return BagSlotFlags::PriorityQuestItems;
+        default:
+            return BagSlotFlags::None;
+    }
+}
+
+static constexpr BagSlotFlags AllPriorityFlags =
+BagSlotFlags::PriorityEquipment | BagSlotFlags::PriorityConsumables |
+BagSlotFlags::PriorityTradeGoods | BagSlotFlags::PriorityJunk |
+BagSlotFlags::PriorityQuestItems | BagSlotFlags::PriorityReagents;
+
+int8 Player::PickAutoDepositTab(::BankType bank, Item const* item) const
+{
+    BagSlotFlags itemCategory = GetItemAutoDepositCategory(item);
+
+    auto pick = [&](auto const& tabs) -> int8
+    {
+        int8 fallback = -1;
+        for (std::size_t i = 0; i < tabs.size(); ++i)
+        {
+            BagSlotFlags flags = static_cast<BagSlotFlags>(int32(*tabs[i].DepositFlags));
+
+            // "Cleanup: Ignore this tab" - opt out of auto-deposit entirely
+            if ((flags & BagSlotFlags::DisableAutoSort) != BagSlotFlags::None)
+                continue;
+
+            // First match on the item's specific category wins
+            if (itemCategory != BagSlotFlags::None && (flags & itemCategory) != BagSlotFlags::None)
+                return int8(i);
+
+            // Remember the first tab with no priority filters as a generic fallback
+            if (fallback < 0 && (flags & AllPriorityFlags) == BagSlotFlags::None)
+                fallback = int8(i);
+        }
+        return fallback;
+    };
+
+    return (bank == ::BankType::Account)
+        ? pick(m_activePlayerData->AccountBankTabSettings)
+        : pick(m_activePlayerData->CharacterBankTabSettings);
+}
+
+std::vector<Item*> Player::GetItemsForBankAutoDeposit(::BankType bank, bool includeReagents) const
+{
+    std::vector<Item*> itemList;
+    ForEachItem(ItemSearchLocation::Inventory, [&itemList, bank, includeReagents](Item* item)
+    {
+        ItemTemplate const* proto = item->GetTemplate();
+        if (!proto)
+            return ItemSearchCallbackResult::Continue;
+
+        // Quest items and non-empty bags never auto-deposit
+        if (proto->GetClass() == ITEM_CLASS_QUEST || item->IsNotEmptyBag())
+            return ItemSearchCallbackResult::Continue;
+
+        if (bank == ::BankType::Account)
+        {
+            // Account bank rejects character-soulbound items (only warbound / BoA / unbound allowed)
+            if (item->IsSoulBound() && !item->IsAccountBound())
+                return ItemSearchCallbackResult::Continue;
+
+            // The "Include tradeable reagents" checkbox in the warband bank UI
+            if (!includeReagents && proto->IsCraftingReagent())
+                return ItemSearchCallbackResult::Continue;
+        }
+
+        itemList.push_back(item);
+        return ItemSearchCallbackResult::Continue;
+    });
+
+    return itemList;
+}
+
 std::vector<Item*> Player::GetCraftingReagentItemsToDeposit()
 {
     std::vector<Item*> itemList = std::vector<Item*>();
@@ -10028,7 +10140,8 @@ Bag* Player::GetBagByPos(uint8 bag) const
 {
     if ((bag >= INVENTORY_SLOT_BAG_START && bag < INVENTORY_SLOT_BAG_END)
         || (bag >= BANK_SLOT_BAG_START && bag < BANK_SLOT_BAG_END)
-        || (bag >= REAGENT_BAG_SLOT_START && bag < REAGENT_BAG_SLOT_END))
+        || (bag >= REAGENT_BAG_SLOT_START && bag < REAGENT_BAG_SLOT_END)
+        || (bag >= ACCOUNT_BANK_SLOT_BAG_START && bag < ACCOUNT_BANK_SLOT_BAG_END))
         if (Item* item = GetItemByPos(INVENTORY_SLOT_BAG_0, bag))
             return item->ToBag();
     return nullptr;
@@ -10178,6 +10291,8 @@ bool Player::IsBagPos(uint16 pos)
         return true;
     if (bag == INVENTORY_SLOT_BAG_0 && (slot >= REAGENT_BAG_SLOT_START && slot < REAGENT_BAG_SLOT_END))
         return true;
+    if (bag == INVENTORY_SLOT_BAG_0 && (slot >= ACCOUNT_BANK_SLOT_BAG_START && slot < ACCOUNT_BANK_SLOT_BAG_END))
+        return true;
     return false;
 }
 
@@ -10186,9 +10301,11 @@ bool Player::IsChildEquipmentPos(uint8 bag, uint8 slot)
     return bag == INVENTORY_SLOT_BAG_0 && (slot >= CHILD_EQUIPMENT_SLOT_START && slot < CHILD_EQUIPMENT_SLOT_END);
 }
 
-bool Player::IsAccountBankPos(uint8 bag, uint8 /*slot*/)
+bool Player::IsAccountBankPos(uint8 bag, uint8 slot)
 {
     if (bag >= ACCOUNT_BANK_SLOT_BAG_START && bag < ACCOUNT_BANK_SLOT_BAG_END)
+        return true;
+    if (bag == INVENTORY_SLOT_BAG_0 && slot >= ACCOUNT_BANK_SLOT_BAG_START && slot < ACCOUNT_BANK_SLOT_BAG_END)
         return true;
     return false;
 }
@@ -10227,6 +10344,10 @@ bool Player::IsValidPos(uint8 bag, uint8 slot, bool explicit_pos) const
 
         // bank bag slots
         if (slot >= BANK_SLOT_BAG_START && slot < BANK_SLOT_BAG_END)
+            return true;
+
+        // account bank bag slots
+        if (slot >= ACCOUNT_BANK_SLOT_BAG_START && slot < ACCOUNT_BANK_SLOT_BAG_END)
             return true;
 
         return false;
@@ -11679,6 +11800,19 @@ InventoryResult Player::CanBankItem(uint8 bag, uint8 slot, ItemPosCountVec& dest
                 return res;
         }
 
+        if (bag == INVENTORY_SLOT_BAG_0 && slot >= ACCOUNT_BANK_SLOT_BAG_START && slot < ACCOUNT_BANK_SLOT_BAG_END)
+        {
+            if (!pItem->IsBag())
+                return EQUIP_ERR_WRONG_SLOT;
+
+            if (slot - ACCOUNT_BANK_SLOT_BAG_START >= GetAccountBankTabCount())
+                return EQUIP_ERR_NO_BANK_SLOT;
+
+            res = CanUseItem(pItem, not_loading);
+            if (res != EQUIP_ERR_OK)
+                return res;
+        }
+
         res = CanStoreItem_InSpecificSlot(bag, slot, dest, pProto, count, swap, pItem);
         if (res != EQUIP_ERR_OK)
             return res;
@@ -11772,6 +11906,93 @@ InventoryResult Player::CanBankItem(uint8 bag, uint8 slot, ItemPosCountVec& dest
     }
 
     return reagentBankOnly ? EQUIP_ERR_REAGENT_BANK_FULL : EQUIP_ERR_BANK_FULL;
+}
+
+InventoryResult Player::CanAccountBankItem(uint8 bag, uint8 slot, ItemPosCountVec& dest, Item* pItem, bool swap) const
+{
+    if (!pItem)
+        return swap ? EQUIP_ERR_CANT_SWAP : EQUIP_ERR_ITEM_NOT_FOUND;
+
+    // Check: no character-soulbound items allowed (only warbound/BoA/unbound)
+    if (pItem->IsSoulBound() && !pItem->IsAccountBound())
+        return EQUIP_ERR_NO_SOULBOUND_ITEM_IN_ACCOUNT_BANK;
+
+    // Check: no quest items in account bank
+    if (pItem->GetTemplate()->GetClass() == ITEM_CLASS_QUEST)
+        return EQUIP_ERR_CANT_SWAP;
+
+    uint32 count = pItem->GetCount();
+    ItemTemplate const* pProto = pItem->GetTemplate();
+
+    // Specific slot requested
+    if (bag != NULL_BAG && slot != NULL_SLOT)
+    {
+        if (bag >= ACCOUNT_BANK_SLOT_BAG_START && bag < ACCOUNT_BANK_SLOT_BAG_END)
+        {
+            InventoryResult res = CanStoreItem_InSpecificSlot(bag, slot, dest, pProto, count, swap, pItem);
+            if (res != EQUIP_ERR_OK)
+                return res;
+
+            if (count == 0)
+                return EQUIP_ERR_OK;
+        }
+        return EQUIP_ERR_BANK_FULL;
+    }
+
+    // Specific bag requested
+    if (bag != NULL_BAG && slot == NULL_SLOT)
+    {
+        if (bag >= ACCOUNT_BANK_SLOT_BAG_START && bag < ACCOUNT_BANK_SLOT_BAG_END)
+        {
+            // Account bank tab bags are generic ITEM_SUBCLASS_CONTAINER bags, so
+            // both passes run with non_specialized=true (matching CanBankItem).
+            // First merge with existing stacks (only meaningful for stackables).
+            if (pProto->GetMaxStackSize() != 1)
+            {
+                InventoryResult res = CanStoreItem_InBag(bag, dest, pProto, count, true, true, pItem, NULL_BAG, NULL_SLOT);
+                if (res != EQUIP_ERR_OK)
+                    return res;
+
+                if (count == 0)
+                    return EQUIP_ERR_OK;
+            }
+
+            // Then try empty slots - this must run even when the merge pass returned
+            // EQUIP_ERR_OK without fully placing the stack (no matching stacks found).
+            InventoryResult res = CanStoreItem_InBag(bag, dest, pProto, count, false, true, pItem, NULL_BAG, NULL_SLOT);
+            if (res != EQUIP_ERR_OK)
+                return res;
+
+            if (count == 0)
+                return EQUIP_ERR_OK;
+        }
+        return EQUIP_ERR_BANK_FULL;
+    }
+
+    // No specific bag/slot: search all account bank bags
+    // First pass: try to merge with existing stacks (non_specialized=true - see above)
+    for (uint8 i = ACCOUNT_BANK_SLOT_BAG_START; i < ACCOUNT_BANK_SLOT_BAG_END; i++)
+    {
+        InventoryResult res = CanStoreItem_InBag(i, dest, pProto, count, true, true, pItem, bag, slot);
+        if (res != EQUIP_ERR_OK)
+            continue;
+
+        if (count == 0)
+            return EQUIP_ERR_OK;
+    }
+
+    // Second pass: try empty slots
+    for (uint8 i = ACCOUNT_BANK_SLOT_BAG_START; i < ACCOUNT_BANK_SLOT_BAG_END; i++)
+    {
+        InventoryResult res = CanStoreItem_InBag(i, dest, pProto, count, false, true, pItem, bag, slot);
+        if (res != EQUIP_ERR_OK)
+            continue;
+
+        if (count == 0)
+            return EQUIP_ERR_OK;
+    }
+
+    return EQUIP_ERR_BANK_FULL;
 }
 
 InventoryResult Player::CanUseItem(Item* pItem, bool not_loading) const
@@ -12573,9 +12794,13 @@ void Player::VisualizeItem(uint8 slot, Item* pItem)
         return;
 
     // check also  BIND_ON_ACQUIRE and BIND_QUEST for .additem or .additemset case by GM (not binded at adding to inventory)
-    if (pItem->GetBonding() == BIND_ON_EQUIP || pItem->GetBonding() == BIND_ON_ACQUIRE || pItem->GetBonding() == BIND_QUEST)
+    if (pItem->GetBonding() == BIND_ON_EQUIP || pItem->GetBonding() == BIND_ON_ACQUIRE || pItem->GetBonding() == BIND_QUEST
+        || pItem->GetBonding() == BIND_WOW_ACCOUNT || pItem->GetBonding() == BIND_BNET_ACCOUNT
+        || pItem->GetBonding() == BIND_BNET_ACCOUNT_UNTIL_EQUIPPED)
     {
         pItem->SetBinding(true);
+        if (pItem->GetBonding() == BIND_BNET_ACCOUNT_UNTIL_EQUIPPED)
+            pItem->ConvertToSoulbound();
         if (IsInWorld())
             GetSession()->GetCollectionMgr()->AddItemAppearance(pItem);
     }
@@ -13382,7 +13607,7 @@ void Player::SwapItem(uint16 src, uint16 dst)
 
             RemoveItem(srcbag, srcslot, true);
             StoreItem(dest, pSrcItem, true);
-            if (IsBankPos(src))
+            if (IsBankPos(src) || IsAccountBankPos(src))
                 ItemAddedQuestCheck(pSrcItem->GetEntry(), pSrcItem->GetCount());
         }
         else if (IsBankPos(dst))
@@ -13398,6 +13623,21 @@ void Player::SwapItem(uint16 src, uint16 dst)
             RemoveItem(srcbag, srcslot, true);
             BankItem(dest, pSrcItem, true);
             ItemRemovedQuestCheck(pSrcItem->GetEntry(), pSrcItem->GetCount());
+        }
+        else if (IsAccountBankPos(dst))
+        {
+            ItemPosCountVec dest;
+            InventoryResult msg = CanAccountBankItem(dstbag, dstslot, dest, pSrcItem, false);
+            if (msg != EQUIP_ERR_OK)
+            {
+                SendEquipError(msg, pSrcItem, nullptr);
+                return;
+            }
+
+            RemoveItem(srcbag, srcslot, true);
+            BankItem(dest, pSrcItem, true);
+            if (!IsBankPos(src) && !IsAccountBankPos(src))
+                ItemRemovedQuestCheck(pSrcItem->GetEntry(), pSrcItem->GetCount());
         }
         else if (IsEquipmentPos(dst))
         {
@@ -13427,6 +13667,8 @@ void Player::SwapItem(uint16 src, uint16 dst)
             msg = CanStoreItem(dstbag, dstslot, sDest, pSrcItem, false);
         else if (IsBankPos(dst))
             msg = CanBankItem(dstbag, dstslot, sDest, pSrcItem, false);
+        else if (IsAccountBankPos(dst))
+            msg = CanAccountBankItem(dstbag, dstslot, sDest, pSrcItem, false);
         else if (IsEquipmentPos(dst))
             msg = CanEquipItem(dstslot, eDest, pSrcItem, false);
         else
@@ -13444,7 +13686,7 @@ void Player::SwapItem(uint16 src, uint16 dst)
 
                 if (IsInventoryPos(dst))
                     StoreItem(sDest, pSrcItem, true);
-                else if (IsBankPos(dst))
+                else if (IsBankPos(dst) || IsAccountBankPos(dst))
                     BankItem(sDest, pSrcItem, true);
                 else if (IsEquipmentPos(dst))
                 {
@@ -13482,6 +13724,8 @@ void Player::SwapItem(uint16 src, uint16 dst)
         msg = CanStoreItem(dstbag, dstslot, sDest, pSrcItem, true);
     else if (IsBankPos(dst))
         msg = CanBankItem(dstbag, dstslot, sDest, pSrcItem, true);
+    else if (IsAccountBankPos(dst))
+        msg = CanAccountBankItem(dstbag, dstslot, sDest, pSrcItem, true);
     else if (IsEquipmentPos(dst))
     {
         msg = CanEquipItem(dstslot, eDest, pSrcItem, true);
@@ -13502,6 +13746,8 @@ void Player::SwapItem(uint16 src, uint16 dst)
         msg = CanStoreItem(srcbag, srcslot, sDest2, pDstItem, true);
     else if (IsBankPos(src))
         msg = CanBankItem(srcbag, srcslot, sDest2, pDstItem, true);
+    else if (IsAccountBankPos(src))
+        msg = CanAccountBankItem(srcbag, srcslot, sDest2, pDstItem, true);
     else if (IsEquipmentPos(src))
     {
         msg = CanEquipItem(srcslot, eDest2, pDstItem, true);
@@ -13592,7 +13838,7 @@ void Player::SwapItem(uint16 src, uint16 dst)
     // add to dest
     if (IsInventoryPos(dst))
         StoreItem(sDest, pSrcItem, true);
-    else if (IsBankPos(dst))
+    else if (IsBankPos(dst) || IsAccountBankPos(dst))
         BankItem(sDest, pSrcItem, true);
     else if (IsEquipmentPos(dst))
     {
@@ -13604,7 +13850,7 @@ void Player::SwapItem(uint16 src, uint16 dst)
     // add to src
     if (IsInventoryPos(src))
         StoreItem(sDest2, pDstItem, true);
-    else if (IsBankPos(src))
+    else if (IsBankPos(src) || IsAccountBankPos(src))
         BankItem(sDest2, pDstItem, true);
     else if (IsEquipmentPos(src))
         EquipItem(eDest2, pDstItem, true);
@@ -14538,7 +14784,7 @@ void Player::SendItemPassives()
     SendDirectMessage(sendItemPassives.Write());
 }
 
-void Player::SendNewItem(Item* item, uint32 quantity, bool pushed, bool created, bool broadcast /*= false*/, uint32 dungeonEncounterId /*= 0*/)
+void Player::SendNewItem(Item* item, uint32 quantity, bool pushed, bool created, bool broadcast /*= false*/, uint32 dungeonEncounterId /*= 0*/, WorldPackets::Item::ItemPushResult::DisplayType chatNotifyType /*= WorldPackets::Item::ItemPushResult::DISPLAY_TYPE_NORMAL*/)
 {
     if (!item)  // prevent crash
         return;
@@ -14566,7 +14812,7 @@ void Player::SendNewItem(Item* item, uint32 quantity, bool pushed, bool created,
     packet.ItemGUID = item->GetGUID();
 
     packet.Pushed = pushed;
-    packet.ChatNotifyType = WorldPackets::Item::ItemPushResult::DISPLAY_TYPE_NORMAL;
+    packet.ChatNotifyType = chatNotifyType;
     packet.Created = created;
     //packet.IsBonusRoll;
 
@@ -15703,19 +15949,23 @@ void Player::RewardQuestPackage(uint32 questPackageId, ItemContext context, uint
     {
         for (QuestPackageItemEntry const* questPackageItem : *questPackageItems)
         {
-            if (onlyItemId && questPackageItem->ItemID != int32(onlyItemId))
-                continue;
-
-            if (CanSelectQuestPackageItem(questPackageItem))
+            if (onlyItemId && questPackageItem->ItemID == int32(onlyItemId))
             {
-                hasFilteredQuestPackageReward = true;
-                ItemPosCountVec dest;
-                if (CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, questPackageItem->ItemID, questPackageItem->ItemQuantity) == EQUIP_ERR_OK)
+                if (CanSelectQuestPackageItem(questPackageItem))
                 {
-                    Item* item = StoreNewItem(dest, questPackageItem->ItemID, true, GenerateItemRandomBonusListId(questPackageItem->ItemID), {}, context);
-                    SendNewItem(item, questPackageItem->ItemQuantity, true, false);
+                    hasFilteredQuestPackageReward = true;
+                    ItemPosCountVec dest;
+                    if (CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, questPackageItem->ItemID, questPackageItem->ItemQuantity) == EQUIP_ERR_OK)
+                    {
+                        Item* item = StoreNewItem(dest, questPackageItem->ItemID, true, GenerateItemRandomBonusListId(questPackageItem->ItemID), {}, context);
+                        SendNewItem(item, questPackageItem->ItemQuantity, true, false);
+                        continue;
+                    }
                 }
             }
+
+            // Unlock the item appearance for the other reward items as well of possible
+            GetSession()->GetCollectionMgr()->AddItemAppearance(questPackageItem->ItemID);
         }
     }
 
@@ -15853,14 +16103,20 @@ void Player::RewardQuest(Quest const* quest, LootItemType rewardType, uint32 rew
             {
                 for (uint32 i = 0; i < QUEST_REWARD_CHOICES_COUNT; ++i)
                 {
-                    if (quest->RewardChoiceItemId[i] && quest->RewardChoiceItemType[i] == LootItemType::Item && quest->RewardChoiceItemId[i] == rewardId)
+                    if (quest->RewardChoiceItemId[i] && quest->RewardChoiceItemType[i] == LootItemType::Item)
                     {
-                        ItemPosCountVec dest;
-                        if (CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, rewardId, quest->RewardChoiceItemCount[i]) == EQUIP_ERR_OK)
+                        if (quest->RewardChoiceItemId[i] == rewardId)
                         {
-                            Item* item = StoreNewItem(dest, rewardId, true, GenerateItemRandomBonusListId(rewardId), {}, ItemContext::Quest_Reward);
-                            SendNewItem(item, quest->RewardChoiceItemCount[i], true, false);
+                            ItemPosCountVec dest;
+                            if (CanStoreNewItem(NULL_BAG, NULL_SLOT, dest, rewardId, quest->RewardChoiceItemCount[i]) == EQUIP_ERR_OK)
+                            {
+                                Item* item = StoreNewItem(dest, rewardId, true, GenerateItemRandomBonusListId(rewardId), {}, ItemContext::Quest_Reward);
+                                SendNewItem(item, quest->RewardChoiceItemCount[i], true, false);
+                            }
                         }
+
+                        // Add the remaining item appearances for the quest if possible
+                        GetSession()->GetCollectionMgr()->AddItemAppearance(quest->RewardChoiceItemId[i]);
                     }
                 }
             }
@@ -18968,8 +19224,11 @@ bool Player::LoadFromDB(ObjectGuid guid, CharacterDatabaseQueryHolder const& hol
     //Other way is to saves m_team into characters table.
     SetFactionForRace(GetRace());
 
-    // Restore Chromie Time state from DB
-    if (fields.chromieTimeExpansionId > 0)
+    // Restore Chromie Time state from DB. A character at or above the deactivation level
+    // restores nothing: the update fields stay zeroed and the next save persists 0, so a
+    // stale DB value (e.g. written before a level-up cleared the state) cannot resurrect
+    // chromie time on login (audit R8/m3, SRV CHR-4; band per audit R10).
+    if (fields.chromieTimeExpansionId > 0 && GetLevel() < ChromieTimeDeactivationLevel)
     {
         if (UIChromieTimeExpansionInfoEntry const* entry = sUIChromieTimeExpansionInfoStore.LookupEntry(uint32(fields.chromieTimeExpansionId)))
         {
@@ -19373,6 +19632,12 @@ bool Player::LoadFromDB(ObjectGuid guid, CharacterDatabaseQueryHolder const& hol
     _LoadSkills(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_SKILLS));
     UpdateSkillsForLevel(); //update skills after load, to make sure they are correctly update at player load
 
+    _LoadResearchSites(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_RESEARCH_SITES)); // Archaeology: restore persisted dig sites
+    InitializeResearchSites(); // Archaeology: seed active dig sites if none persisted and the profession is known
+    _LoadResearchHistory(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_RESEARCH_HISTORY)); // Archaeology: restore completed projects (before project rolls so they avoid repeats)
+    _LoadResearchProjects(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_RESEARCH_PROJECTS)); // Archaeology: restore active research projects
+    InitializeResearchProjects(); // Archaeology: backfill a project for branches with fragments but none active
+
     SetNumRespecs(fields.numRespecs);
     SetPrimarySpecialization(fields.primarySpecialization);
     SetActiveTalentGroup(fields.activeTalentGroup);
@@ -19433,6 +19698,8 @@ bool Player::LoadFromDB(ObjectGuid guid, CharacterDatabaseQueryHolder const& hol
     m_reputationMgr->LoadFromDB(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_REPUTATION));
 
     _LoadCharacterBankTabSettings(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_BANK_TAB_SETTINGS));
+    _LoadAccountBankTabSettings(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_ACCOUNT_BANK_TAB_SETTINGS));
+    _LoadAccountBankCoinage(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_ACCOUNT_BANK_COINAGE));
 
     _LoadInventory(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_INVENTORY),
         holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_ARTIFACTS),
@@ -19441,6 +19708,8 @@ bool Player::LoadFromDB(ObjectGuid guid, CharacterDatabaseQueryHolder const& hol
         holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_AZERITE_UNLOCKED_ESSENCES),
         holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_AZERITE_EMPOWERED),
         time_diff);
+
+    _LoadAccountBankItems(holder.GetPreparedResult(PLAYER_LOGIN_QUERY_LOAD_ACCOUNT_BANK_ITEMS), time_diff);
 
     // update items with duration and realtime
     UpdateItemDuration(time_diff, true);
@@ -20019,6 +20288,13 @@ void Player::_LoadInventory(PreparedQueryResult result, PreparedQueryResult arti
                         if (err == EQUIP_ERR_OK)
                             item = BankItem(dest, item, true);
                     }
+                    else if (IsAccountBankPos(INVENTORY_SLOT_BAG_0, slot))
+                    {
+                        ItemPosCountVec dest;
+                        err = CanBankItem(INVENTORY_SLOT_BAG_0, slot, dest, item, false, false);
+                        if (err == EQUIP_ERR_OK)
+                            item = BankItem(dest, item, true);
+                    }
 
                     // Remember bags that may contain items in them
                     if (err == EQUIP_ERR_OK)
@@ -20547,9 +20823,7 @@ void Player::_LoadQuestStatusRewarded(PreparedQueryResult result)
 
                 if (std::vector<QuestPackageItemEntry const*> const* questPackageItems = sDB2Manager.GetQuestPackageItems(quest->GetQuestPackageID()))
                     for (QuestPackageItemEntry const* questPackageItem : *questPackageItems)
-                        if (ItemTemplate const* rewardProto = sObjectMgr->GetItemTemplate(questPackageItem->ItemID))
-                            if (rewardProto->ItemSpecClassMask & GetClassMask())
-                                GetSession()->GetCollectionMgr()->AddItemAppearance(questPackageItem->ItemID);
+                        GetSession()->GetCollectionMgr()->AddItemAppearance(questPackageItem->ItemID);
 
                 if (quest->CanIncreaseRewardedQuestCounters())
                     m_RewardedQuests.insert(quest_id);
@@ -21154,6 +21428,146 @@ void Player::_LoadCharacterBankTabSettings(PreparedQueryResult result)
         AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::CharacterBankTabSettings));
 }
 
+void Player::_LoadAccountBankTabSettings(PreparedQueryResult result)
+{
+    if (result)
+    {
+        uint8 tabCount = 0;
+        do
+        {
+            Field* fields = result->Fetch();
+            uint8 tabId = fields[0].GetUInt8();
+            if (tabId >= (ACCOUNT_BANK_SLOT_BAG_END - ACCOUNT_BANK_SLOT_BAG_START))
+                continue;
+
+            SetAccountBankTabSettings(tabId, fields[1].GetString(), fields[2].GetString(),
+                fields[3].GetString(), static_cast<BagSlotFlags>(fields[4].GetUInt32()));
+            tabCount = std::max(tabCount, uint8(tabId + 1));
+        } while (result->NextRow());
+
+        SetAccountBankTabCount(tabCount);
+    }
+
+    while (m_activePlayerData->AccountBankTabSettings.size() < *m_activePlayerData->NumAccountBankTabs)
+        AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::AccountBankTabSettings));
+}
+
+void Player::_LoadAccountBankCoinage(PreparedQueryResult result)
+{
+    if (result)
+        SetAccountBankCoinage((*result)[0].GetUInt64());
+}
+
+void Player::ModifyAccountBankCoinage(int64 delta)
+{
+    int64 current = int64(GetAccountBankCoinage());
+    int64 next = current + delta;
+    if (next < 0)
+        next = 0;
+    if (uint64(next) > MAX_MONEY_AMOUNT)
+        next = int64(MAX_MONEY_AMOUNT);
+    SetAccountBankCoinage(uint64(next));
+}
+
+void Player::_LoadAccountBankItems(PreparedQueryResult result, uint32 timeDiff)
+{
+    // Same field layout as character_inventory load (SelectItemInstanceContent), with
+    // abi.bag (tab index 0-4) at field 54 and abi.slot at field 55.
+
+    // Ensure every owned tab has its bag item before contents are placed: a tab bought on
+    // another character of the account has no bag object on this one yet
+    for (uint8 tabIndex = 0; tabIndex < GetAccountBankTabCount(); ++tabIndex)
+    {
+        uint8 bagSlot = ACCOUNT_BANK_SLOT_BAG_START + tabIndex;
+        Bag* bag = GetBagByPos(bagSlot);
+        if (!bag)
+        {
+            // Create the bag item for this tab if it doesn't exist yet
+            if (Item* bagItem = Item::CreateItem(ITEM_ACCOUNT_BANK_TAB_BAG, 1, ItemContext::NONE, this))
+            {
+                uint16 bagPos = (INVENTORY_SLOT_BAG_0 << 8) | bagSlot;
+                bagItem->SetContainer(nullptr);
+                bagItem->SetSlot(bagSlot);
+                StoreItem(ItemPosCountVec(1, ItemPosCount(bagPos, 1)), bagItem, true);
+                bagItem->SetState(ITEM_UNCHANGED, this);
+                bag = bagItem->ToBag();
+
+                TC_LOG_DEBUG("entities.player", "Player::_LoadAccountBankItems: Created account bank bag for tab {} at slot {}", tabIndex, bagSlot);
+            }
+
+            if (!bag)
+            {
+                TC_LOG_ERROR("entities.player", "Player::_LoadAccountBankItems: Player '{}' ({}) failed to create account bank bag for tab {}.",
+                    GetName(), GetGUID().ToString(), tabIndex);
+                continue;
+            }
+        }
+    }
+
+    if (!result)
+        return;
+
+    uint32 zoneId = GetZoneId();
+    CharacterDatabaseTransaction trans = CharacterDatabase.BeginTransaction();
+
+    m_itemUpdateQueueBlocked = true;
+    do
+    {
+        Field* fields = result->Fetch();
+        if (Item* item = _LoadItem(trans, zoneId, timeDiff, fields))
+        {
+            uint8 tabIndex = fields[54].GetUInt8();
+            uint8 slot = fields[55].GetUInt8();
+
+            if (tabIndex >= GetAccountBankTabCount())
+            {
+                TC_LOG_ERROR("entities.player", "Player::_LoadAccountBankItems: Player '{}' ({}) has account bank item ({}, entry: {}) in tab {} which exceeds tab count {}. Skipping.",
+                    GetName(), GetGUID().ToString(), item->GetGUID().ToString(), item->GetEntry(), tabIndex, GetAccountBankTabCount());
+                item->DeleteFromDB(trans);
+                delete item;
+                continue;
+            }
+
+            uint8 bagSlot = ACCOUNT_BANK_SLOT_BAG_START + tabIndex;
+
+            // Bag should already exist from the pre-creation loop above
+            Bag* bag = GetBagByPos(bagSlot);
+            if (!bag)
+            {
+                TC_LOG_ERROR("entities.player", "Player::_LoadAccountBankItems: Player '{}' ({}) failed to get account bank bag for tab {} after pre-creation.",
+                    GetName(), GetGUID().ToString(), tabIndex);
+                item->DeleteFromDB(trans);
+                delete item;
+                continue;
+            }
+
+            GetSession()->GetCollectionMgr()->CheckHeirloomUpgrades(item);
+            GetSession()->GetCollectionMgr()->AddItemAppearance(item);
+
+            ItemPosCountVec dest;
+            InventoryResult err = CanStoreItem(bagSlot, slot, dest, item);
+            if (err == EQUIP_ERR_OK)
+            {
+                item = StoreItem(dest, item, true);
+                item->SetState(ITEM_UNCHANGED, this);
+            }
+            else
+            {
+                TC_LOG_ERROR("entities.player", "Player::_LoadAccountBankItems: Player '{}' ({}) has account bank item ({}, entry: {}) which can't be loaded (tab {}, slot {}) by reason {}. Item will be sent by mail.",
+                    GetName(), GetGUID().ToString(), item->GetGUID().ToString(), item->GetEntry(), tabIndex, slot, uint32(err));
+                item->DeleteFromInventoryDB(trans);
+
+                MailDraft draft(GetSession()->GetTrinityString(LANG_NOT_EQUIPPED_ITEM), "There were problems with equipping item(s).");
+                draft.AddItem(item);
+                draft.SendMailTo(trans, this, MailSender(this, MAIL_STATIONERY_GM), MAIL_CHECK_MASK_COPIED);
+            }
+        }
+    } while (result->NextRow());
+
+    m_itemUpdateQueueBlocked = false;
+    CharacterDatabase.CommitTransaction(trans);
+}
+
 /*********************************************************/
 /***                   SAVE SYSTEM                     ***/
 /*********************************************************/
@@ -21516,6 +21930,9 @@ void Player::SaveToDB(LoginDatabaseTransaction loginTransaction, CharacterDataba
     _SaveActions(trans);
     _SaveAuras(trans);
     _SaveSkills(trans);
+    _SaveResearchSites(trans);
+    _SaveResearchProjects(trans);
+    _SaveResearchHistory(trans);
     _SaveStoredAuraTeleportLocations(trans);
     m_achievementMgr->SaveToDB(trans);
     m_reputationMgr->SaveToDB(trans);
@@ -21532,6 +21949,9 @@ void Player::SaveToDB(LoginDatabaseTransaction loginTransaction, CharacterDataba
     _SaveCUFProfiles(trans);
     _SavePlayerData(trans);
     _SaveCharacterBankTabSettings(trans);
+    _SaveAccountBankTabSettings(trans);
+    _SaveAccountBankItems(trans);
+    _SaveAccountBankCoinage(trans);
     if (_garrison)
         _garrison->SaveToDB(trans);
 
@@ -21951,16 +22371,25 @@ void Player::_SaveInventory(CharacterDatabaseTransaction trans)
             }
         }
 
+        // Items stored INSIDE an account bank tab bag are persisted per battle.net account in
+        // _SaveAccountBankItems, so skip the per-character inventory position write for them.
+        // The tab bag itself (sitting in INVENTORY_SLOT_BAG_0 at slots ACCOUNT_BANK_SLOT_BAG_START..END)
+        // is per-character and MUST go through the normal character_inventory save path.
+        bool isAccountBankItem = container && IsAccountBankPos(INVENTORY_SLOT_BAG_0, container->GetSlot());
+
         switch (item->GetState())
         {
             case ITEM_NEW:
             case ITEM_CHANGED:
-                stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_INVENTORY_ITEM);
-                stmt->setUInt64(0, GetGUID().GetCounter());
-                stmt->setUInt64(1, container ? container->GetGUID().GetCounter() : UI64LIT(0));
-                stmt->setUInt8 (2, item->GetSlot());
-                stmt->setUInt64(3, item->GetGUID().GetCounter());
-                trans->Append(stmt);
+                if (!isAccountBankItem)
+                {
+                    stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_INVENTORY_ITEM);
+                    stmt->setUInt64(0, GetGUID().GetCounter());
+                    stmt->setUInt64(1, container ? container->GetGUID().GetCounter() : UI64LIT(0));
+                    stmt->setUInt8 (2, item->GetSlot());
+                    stmt->setUInt64(3, item->GetGUID().GetCounter());
+                    trans->Append(stmt);
+                }
                 break;
             case ITEM_REMOVED:
                 stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHAR_INVENTORY_BY_ITEM);
@@ -22313,6 +22742,76 @@ void Player::_SaveMonthlyQuestStatus(CharacterDatabaseTransaction trans)
     m_MonthlyQuestChanged = false;
 }
 
+void Player::_SaveResearchSites(CharacterDatabaseTransaction trans)
+{
+    // Rewrite the character's active dig sites from the ResearchSites / ResearchSiteProgress update
+    // fields (delete-all + reinsert; the set is small and always rewritten together).
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHARACTER_RESEARCH_SITE);
+    stmt->setUInt64(0, GetGUID().GetCounter());
+    trans->Append(stmt);
+
+    uint32 const count = m_activePlayerData->ResearchSites[0].size();
+    for (uint32 i = 0; i < count; ++i)
+    {
+        uint32 const siteId = m_activePlayerData->ResearchSites[0][i];
+        float findX = 0.0f, findY = 0.0f;
+        _EnsureResearchSiteFindLocation(siteId, findX, findY);
+
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHARACTER_RESEARCH_SITE);
+        stmt->setUInt64(0, GetGUID().GetCounter());
+        stmt->setUInt16(1, siteId);
+        stmt->setUInt32(2, m_activePlayerData->ResearchSiteProgress[0][i]);
+        stmt->setFloat(3, findX);
+        stmt->setFloat(4, findY);
+        trans->Append(stmt);
+    }
+}
+
+void Player::_SaveResearchProjects(CharacterDatabaseTransaction trans)
+{
+    // Rewrite the character's active research projects from the Research update field (delete-all +
+    // reinsert; one entry per active branch).
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHARACTER_RESEARCH_PROJECT);
+    stmt->setUInt64(0, GetGUID().GetCounter());
+    trans->Append(stmt);
+
+    uint32 const count = m_activePlayerData->Research[0].size();
+    for (uint32 i = 0; i < count; ++i)
+    {
+        int16 projectId = m_activePlayerData->Research[0][i].ResearchProjectID;
+        if (!projectId)
+            continue;
+
+        ResearchProjectEntry const* project = sResearchProjectStore.LookupEntry(uint32(projectId));
+        if (!project || !sArchaeologyMgr->IsResearchBranchEnabled(project->ResearchBranchID))
+            continue;
+
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHARACTER_RESEARCH_PROJECT);
+        stmt->setUInt64(0, GetGUID().GetCounter());
+        stmt->setUInt32(1, uint32(projectId));
+        trans->Append(stmt);
+    }
+}
+
+void Player::_SaveResearchHistory(CharacterDatabaseTransaction trans)
+{
+    // Rewrite the character's completed research projects from ResearchHistory (delete-all + reinsert).
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_CHARACTER_RESEARCH_HISTORY);
+    stmt->setUInt64(0, GetGUID().GetCounter());
+    trans->Append(stmt);
+
+    auto const& completed = m_activePlayerData->ResearchHistory->CompletedProjects;
+    for (uint32 i = 0; i < completed.size(); ++i)
+    {
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_CHARACTER_RESEARCH_HISTORY);
+        stmt->setUInt64(0, GetGUID().GetCounter());
+        stmt->setUInt32(1, completed[i].ProjectID);
+        stmt->setInt64(2, completed[i].FirstCompleted);
+        stmt->setUInt32(3, completed[i].CompletionCount);
+        trans->Append(stmt);
+    }
+}
+
 void Player::_SaveSkills(CharacterDatabaseTransaction trans)
 {
     CharacterDatabasePreparedStatement* stmt;
@@ -22579,6 +23078,73 @@ void Player::_SaveCharacterBankTabSettings(CharacterDatabaseTransaction trans) c
         stmt->setString(4, *tabSetting.Description);
         stmt->setInt32(5, *tabSetting.DepositFlags);
         trans->Append(stmt);
+    }
+}
+
+void Player::_SaveAccountBankTabSettings(CharacterDatabaseTransaction trans) const
+{
+    uint32 bnetAccountId = GetSession()->GetBattlenetAccountId();
+
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ACCOUNT_BANK_TAB_SETTINGS);
+    stmt->setUInt32(0, bnetAccountId);
+    trans->Append(stmt);
+
+    for (std::size_t i = 0; i < m_activePlayerData->AccountBankTabSettings.size(); ++i)
+    {
+        UF::BankTabSettings const& tabSetting = m_activePlayerData->AccountBankTabSettings[i];
+        stmt = CharacterDatabase.GetPreparedStatement(CHAR_INS_ACCOUNT_BANK_TAB_SETTINGS);
+        stmt->setUInt32(0, bnetAccountId);
+        stmt->setUInt8(1, i);
+        stmt->setString(2, *tabSetting.Name);
+        stmt->setString(3, *tabSetting.Icon);
+        stmt->setString(4, *tabSetting.Description);
+        stmt->setInt32(5, *tabSetting.DepositFlags);
+        trans->Append(stmt);
+    }
+}
+
+void Player::_SaveAccountBankCoinage(CharacterDatabaseTransaction trans) const
+{
+    uint32 bnetAccountId = GetSession()->GetBattlenetAccountId();
+    if (!bnetAccountId)
+        return;
+
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_ACCOUNT_BANK_COINAGE);
+    stmt->setUInt32(0, bnetAccountId);
+    stmt->setUInt64(1, GetAccountBankCoinage());
+    trans->Append(stmt);
+}
+
+void Player::_SaveAccountBankItems(CharacterDatabaseTransaction trans)
+{
+    uint32 bnetAccountId = GetSession()->GetBattlenetAccountId();
+
+    // Delete all account bank item positions - they will be re-inserted below
+    CharacterDatabasePreparedStatement* stmt = CharacterDatabase.GetPreparedStatement(CHAR_DEL_ACCOUNT_BANK_ITEMS_BY_BNET);
+    stmt->setUInt32(0, bnetAccountId);
+    trans->Append(stmt);
+
+    // Re-insert current positions
+    for (uint8 tabIndex = 0; tabIndex < GetAccountBankTabCount(); ++tabIndex)
+    {
+        uint8 bagSlot = ACCOUNT_BANK_SLOT_BAG_START + tabIndex;
+        Bag* bag = GetBagByPos(bagSlot);
+        if (!bag)
+            continue;
+
+        for (uint32 slot = 0; slot < bag->GetBagSize(); ++slot)
+        {
+            Item* item = bag->GetItemByPos(slot);
+            if (!item)
+                continue;
+
+            stmt = CharacterDatabase.GetPreparedStatement(CHAR_REP_ACCOUNT_BANK_ITEM);
+            stmt->setUInt32(0, bnetAccountId);
+            stmt->setUInt8(1, tabIndex);
+            stmt->setUInt8(2, slot);
+            stmt->setUInt64(3, item->GetGUID().GetCounter());
+            trans->Append(stmt);
+        }
     }
 }
 
@@ -25279,7 +25845,7 @@ void Player::ReportedAfkBy(Player* reporter)
 uint8 Player::GetStartLevel(uint8 race, uint8 playerClass, Optional<int32> characterTemplateId) const
 {
     uint8 startLevel = sWorld->getIntConfig(CONFIG_START_PLAYER_LEVEL);
-    if (sChrRacesStore.AssertEntry(race)->GetFlags().HasFlag(ChrRacesFlag::IsAlliedRace))
+    if (sChrRacesStore.AssertEntry(race)->GetFlags().HasFlag(ChrRacesFlag::IsAlliedRace) || race == RACE_DRACTHYR_ALLIANCE || race == RACE_DRACTHYR_HORDE)
         startLevel = sWorld->getIntConfig(CONFIG_START_ALLIED_RACE_LEVEL);
 
     if (playerClass == CLASS_DEATH_KNIGHT)
@@ -25291,8 +25857,6 @@ uint8 Player::GetStartLevel(uint8 race, uint8 playerClass, Optional<int32> chara
     }
     else if (playerClass == CLASS_DEMON_HUNTER)
         startLevel = std::max<uint8>(sWorld->getIntConfig(CONFIG_START_DEMON_HUNTER_PLAYER_LEVEL), startLevel);
-    else if (playerClass == CLASS_EVOKER)
-        startLevel = std::max<uint8>(sWorld->getIntConfig(CONFIG_START_EVOKER_PLAYER_LEVEL), startLevel);
 
     if (characterTemplateId)
     {
@@ -25939,9 +26503,18 @@ void Player::SendInitialPacketsBeforeAddToMap()
     initialSetup.ServerExpansionLevel = sWorld->getIntConfig(CONFIG_EXPANSION);
     SendDirectMessage(initialSetup.Write());
 
-    // Send Chromie Time state to client on login
-    if (m_activePlayerData->UiChromieTimeExpansionID != 0)
-        SendCtrOptions();
+    // Account-wide bank lock: grant to this session if no other session for the same
+    // Bnet account already holds it. Without this flag the client shows the
+    // "The bank is being used by another member of your Warband" prompt.
+    if (!sWorld->IsAccountInventoryLockAcquired(GetSession()->GetBattlenetAccountGUID(), GetSession()))
+        SetPlayerLocalFlag(PLAYER_LOCAL_FLAG_HAS_ACCOUNT_BANK_LOCK);
+
+    // Retail sends SMSG_SET_CTR_OPTIONS during login to every player regardless of chromie
+    // state (captures A/B/C: pulses appear in all 32 non-chromie sessions too - audit M4),
+    // and the first send of a session carries a default-empty Previous block
+    // ([ (0,0,0,[]), current ] - A rec 721 / B 485 / C 469, audit m2).
+    WorldPackets::Misc::CTROptionsBlock emptyPrevious;
+    SendCtrOptions(&emptyPrevious);
 
     SetMovedUnit(this);
 }
@@ -26988,6 +27561,7 @@ void Player::SummonIfPossible(bool agree)
     // expire and auto declined
     if (m_summon_expire < GameTime::GetGameTime())
     {
+        SendDirectMessage(WorldPackets::Movement::SummonCancel().Write());
         broadcastSummonResponse(false);
         return;
     }
@@ -28154,6 +28728,631 @@ void Player::StoreLootItem(ObjectGuid lootWorldObjectGuid, uint8 lootSlot, Loot*
         sLootItemStorage->RemoveStoredLootItemForContainer(lootWorldObjectGuid.GetCounter(), item->type, item->itemid, item->count, item->LootListId);
 }
 
+void Player::HandleArchaeologySurvey()
+{
+    // A successful Survey reveals a private, branch-specific lootable find at the hidden position and
+    // advances site progress immediately. Dig/open-lock and fragment award then use the normal
+    // GameObject chest path. Retail also spawns an approximate red/yellow/green direction tool on
+    // misses and applies Standing On It while the player is over the hidden point.
+    //
+    // PROVISIONAL-FROM-FORK (evry/master-track/archaeology 9d7a0c6254 / 107b2cea57): the 8/40/80
+    // distance bands, the 8/20/40 degree facing cones and the 2-4 yd tool spawn ring come from the
+    // fork's retail observation, not from a captured server rule.
+    constexpr uint32 SPELL_ARCHAEOLOGY_SURVEY = 80451;
+    constexpr uint32 GO_SURVEY_TOOL_GREEN = 204272;
+    constexpr uint32 GO_SURVEY_TOOL_YELLOW = 206589;
+    constexpr uint32 GO_SURVEY_TOOL_RED = 206590;
+    constexpr float SURVEY_FIND_DISTANCE = 8.0f;
+    constexpr float SURVEY_GREEN_DISTANCE = 40.0f;
+    constexpr float SURVEY_YELLOW_DISTANCE = 80.0f;
+    // Max |tool facing -> find| lean per band, in radians.
+    constexpr float SURVEY_FACING_CONE_GREEN = float(8.0 * M_PI / 180.0);
+    constexpr float SURVEY_FACING_CONE_YELLOW = float(20.0 * M_PI / 180.0);
+    constexpr float SURVEY_FACING_CONE_RED = float(40.0 * M_PI / 180.0);
+    constexpr float SURVEY_TOOL_SPAWN_MIN = 2.0f;
+    constexpr float SURVEY_TOOL_SPAWN_MAX = 4.0f;
+    constexpr Seconds SURVEY_TOOL_DURATION = 5s;
+    constexpr Seconds ARCHAEOLOGY_FIND_DURATION = 2min;
+
+    if (!HasSkill(SKILL_ARCHAEOLOGY))
+        return;
+
+    // Survey tools occupy the reference implementation's second GameObject slot. Recasting removes
+    // the previous tool before creating its replacement, so stale guidance cannot make a
+    // later cast appear inert.
+    if (GameObject* previousTool = GetMap()->GetGameObject(m_ObjectSlot[1]))
+    {
+        uint32 const entry = previousTool->GetEntry();
+        if (entry == GO_SURVEY_TOOL_GREEN || entry == GO_SURVEY_TOOL_YELLOW || entry == GO_SURVEY_TOOL_RED)
+        {
+            if (previousTool->GetSpellId() == SPELL_ARCHAEOLOGY_SURVEY)
+                previousTool->SetSpellId(0);
+
+            RemoveGameObject(previousTool, true);
+            m_ObjectSlot[1] = ObjectGuid::Empty;
+        }
+    }
+
+    // Only one revealed, unconsumed find may exist for a player. Clear an expired/despawned token
+    // lazily; owned GameObjects are also removed by normal player cleanup.
+    if (_pendingArchaeologyFind)
+    {
+        if (GameObject* pendingFind = GetMap()->GetGameObject(_pendingArchaeologyFind->GameObjectGuid))
+            if (pendingFind->isSpawned())
+                return;
+
+        _pendingArchaeologyFind.reset();
+    }
+
+    uint32 const mapId = GetMapId();
+    float const px = GetPositionX();
+    float const py = GetPositionY();
+
+    // Find which of the player's active dig sites (on this map) they are standing in.
+    uint32 siteId = 0;
+    uint32 siteIndex = 0;
+    ArchaeologyDigSiteInfo const* info = nullptr;
+    uint32 const siteCount = m_activePlayerData->ResearchSites[0].size();
+    for (uint32 i = 0; i < siteCount; ++i)
+    {
+        uint32 candidate = m_activePlayerData->ResearchSites[0][i];
+        ResearchSiteEntry const* site = sResearchSiteStore.LookupEntry(candidate);
+        if (!site || uint32(site->MapID) != mapId)
+            continue;
+
+        if (sArchaeologyMgr->IsInsideDigSite(candidate, px, py))
+        {
+            siteId = candidate;
+            siteIndex = i;
+            info = sArchaeologyMgr->GetDigSiteInfo(candidate);
+            break;
+        }
+    }
+
+    if (!siteId || !info)
+        return; // not standing in one of the player's active dig sites
+
+    uint32 const progressSize = m_activePlayerData->ResearchSiteProgress[0].size();
+    uint32 progress = siteIndex < progressSize ? m_activePlayerData->ResearchSiteProgress[0][siteIndex] : 0;
+    if (progress >= info->FindCount)
+    {
+        // Site already fully surveyed (e.g. persisted full from before exhaust/replace existed):
+        // cycle it now instead of no-oping, so the player is never stuck on a dead site.
+        ReplaceResearchSite(siteIndex, mapId);
+        return;
+    }
+
+    float fx, fy;
+    if (!_EnsureResearchSiteFindLocation(siteId, fx, fy))
+        return;
+
+    float const dist = GetExactDist2d(fx, fy);
+    // Reveal when strictly inside the band; dist == 8.0f is still green guidance.
+    bool found = dist < SURVEY_FIND_DISTANCE;
+
+    if (found)
+    {
+        uint32 const findGameObjectId = sArchaeologyMgr->GetFindGameObjectId(info->BranchID);
+        if (!findGameObjectId)
+            found = false;
+        else
+        {
+            // Sibling: ArchaeologyMgr::IsUsableFindTerrain / Creature spawn - resolve Z from
+            // MAX_HEIGHT, not player Z. UpdateGroundPositionZ searches downward from the seed; on
+            // inclines the dig XY ground can sit above the player and the GO clips underground.
+            float const fz = GetMap()->GetHeight(GetPhaseShift(), fx, fy, MAX_HEIGHT, true, MAX_FALL_DISTANCE);
+            if (fz <= INVALID_HEIGHT || !Trinity::IsValidMapCoord(fx, fy, fz))
+                found = false;
+            else
+            {
+                float const facing = GetOrientation();
+                if (GameObject* find = SummonGameObject(findGameObjectId, Position(fx, fy, fz, facing),
+                    QuaternionData::fromEulerAnglesZYX(facing, 0.0f, 0.0f), ARCHAEOLOGY_FIND_DURATION,
+                    GO_SUMMON_TIMED_OR_CORPSE_DESPAWN, GetGUID()))
+                {
+                    _pendingArchaeologyFind = PendingArchaeologyFind
+                    {
+                        .GameObjectGuid = find->GetGUID(),
+                        .ResearchSiteId = siteId,
+                        .ResearchBranchId = info->BranchID
+                    };
+
+                    ++progress;
+                    SetUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchSiteProgress, 0).ModifyValue(siteIndex), progress);
+                    UpdateCriteria(CriteriaType::FindResearchObject, findGameObjectId);
+                    RemoveAurasDueToSpell(SPELL_ARCHAEOLOGY_STANDING_ON_IT);
+
+                    // Progress advances at reveal on retail. Generate and retain the next point now so
+                    // relog/restart cannot relocate an in-progress site's hidden find.
+                    if (progress < info->FindCount)
+                    {
+                        _researchSiteFindLocations.erase(siteId);
+                        float nextX, nextY;
+                        _EnsureResearchSiteFindLocation(siteId, nextX, nextY);
+                    }
+                }
+                else
+                    found = false;
+            }
+        }
+    }
+    if (!found)
+    {
+        uint32 const toolEntry = dist < SURVEY_GREEN_DISTANCE ? GO_SURVEY_TOOL_GREEN
+            : dist < SURVEY_YELLOW_DISTANCE ? GO_SURVEY_TOOL_YELLOW
+            : GO_SURVEY_TOOL_RED;
+        float const facingCone = dist < SURVEY_GREEN_DISTANCE ? SURVEY_FACING_CONE_GREEN
+            : dist < SURVEY_YELLOW_DISTANCE ? SURVEY_FACING_CONE_YELLOW
+            : SURVEY_FACING_CONE_RED;
+
+        // Retail spawns the theodolite beside the player (small ring), not under feet.
+        float const spawnAngle = frand(0.0f, float(2 * M_PI));
+        float const spawnDist = frand(SURVEY_TOOL_SPAWN_MIN, SURVEY_TOOL_SPAWN_MAX);
+        float const tx = px + spawnDist * std::cos(spawnAngle);
+        float const ty = py + spawnDist * std::sin(spawnAngle);
+        float const tz = GetMap()->GetHeight(GetPhaseShift(), tx, ty, MAX_HEIGHT, true, MAX_FALL_DISTANCE);
+        if (tz > INVALID_HEIGHT && Trinity::IsValidMapCoord(tx, ty, tz))
+        {
+            // Facing is tool->find with a band-dependent cone (red noisier than yellow/green).
+            // PROVISIONAL-FROM-FORK 107b2cea57.
+            Position const toolPos(tx, ty, tz);
+            float const facing = Position::NormalizeOrientation(
+                toolPos.GetAbsoluteAngle(fx, fy) + frand(-facingCone, facingCone));
+            if (GameObject* tool = SummonGameObject(toolEntry, Position(tx, ty, tz, facing),
+                QuaternionData::fromEulerAnglesZYX(facing, 0.0f, 0.0f), SURVEY_TOOL_DURATION))
+            {
+                tool->SetSpellId(SPELL_ARCHAEOLOGY_SURVEY);
+                m_ObjectSlot[1] = tool->GetGUID();
+            }
+        }
+    }
+
+    WorldPackets::Archaeology::SurveyCast survey;
+    survey.TotalFinds = progress;
+    survey.NumFindsCompleted = info->FindCount;
+    survey.ResearchBranchID = info->BranchID;
+    survey.SuccessfulFind = found;
+    SendDirectMessage(survey.Write());
+
+    // Exhaust and replace once every find is collected (retail single-slot replacement).
+    if (found && progress >= info->FindCount)
+    {
+        ReplaceResearchSite(siteIndex, mapId);
+        UpdateCriteria(CriteriaType::ExhaustAnyResearchSite);
+    }
+}
+
+bool Player::CanUseArchaeologyFind(GameObject const* find) const
+{
+    if (!find || !_pendingArchaeologyFind || !HasSkill(SKILL_ARCHAEOLOGY))
+        return false;
+
+    return _pendingArchaeologyFind->GameObjectGuid == find->GetGUID() &&
+        find->GetOwnerGUID() == GetGUID() &&
+        find->GetPrivateObjectOwner() == GetGUID() &&
+        find->GetEntry() == sArchaeologyMgr->GetFindGameObjectId(_pendingArchaeologyFind->ResearchBranchId);
+}
+
+void Player::OnArchaeologyFindLooted(GameObject* find)
+{
+    if (!CanUseArchaeologyFind(find))
+        return;
+
+    uint32 const branchId = _pendingArchaeologyFind->ResearchBranchId;
+    _pendingArchaeologyFind.reset();
+
+    // PROVISIONAL-FROM-FORK (evry/master-track/archaeology 24a970f7c7): the first successful
+    // unique-find acquisition grants +1 Archaeology (reveal / reopen do not). Guaranteed for the
+    // observed skill range; near-cap chance curves are not modelled.
+    UpdateSkillPro(SKILL_ARCHAEOLOGY, 1000, 1);
+
+    // The normal chest loot path has already granted the branch currency (+ optional provisional
+    // keystone). Surface the branch's current project immediately; login remains the disconnect fallback.
+    EnsureResearchProject(branchId);
+}
+
+bool Player::_EnsureResearchSiteFindLocation(uint32 researchSiteId, float& x, float& y)
+{
+    auto itr = _researchSiteFindLocations.find(researchSiteId);
+    if (itr != _researchSiteFindLocations.end() &&
+        sArchaeologyMgr->IsInsideDigSite(researchSiteId, itr->second.first, itr->second.second))
+    {
+        x = itr->second.first;
+        y = itr->second.second;
+        return true;
+    }
+
+    if (!sArchaeologyMgr->GenerateFindLocation(researchSiteId, x, y, GetMap(), GetPhaseShift()))
+        return false;
+
+    _researchSiteFindLocations[researchSiteId] = { x, y };
+    return true;
+}
+
+void Player::_UpdateArchaeologySurveyIndicator()
+{
+    // Must match HandleArchaeologySurvey's reveal radius.
+    constexpr float SURVEY_FIND_DISTANCE = 8.0f;
+
+    bool standingOnFind = false;
+    if (HasSkill(SKILL_ARCHAEOLOGY))
+    {
+        if (_pendingArchaeologyFind)
+        {
+            if (GameObject* find = GetMap()->GetGameObject(_pendingArchaeologyFind->GameObjectGuid))
+            {
+                if (find->isSpawned())
+                {
+                    if (HasAura(SPELL_ARCHAEOLOGY_STANDING_ON_IT))
+                        RemoveAurasDueToSpell(SPELL_ARCHAEOLOGY_STANDING_ON_IT);
+                    return;
+                }
+            }
+
+            _pendingArchaeologyFind.reset();
+        }
+
+        uint32 const mapId = GetMapId();
+        uint32 const siteCount = m_activePlayerData->ResearchSites[0].size();
+        for (uint32 i = 0; i < siteCount; ++i)
+        {
+            uint32 const siteId = m_activePlayerData->ResearchSites[0][i];
+            ResearchSiteEntry const* site = sResearchSiteStore.LookupEntry(siteId);
+            if (!site || site->MapID < 0 || uint32(site->MapID) != mapId ||
+                !sArchaeologyMgr->IsInsideDigSite(siteId, GetPositionX(), GetPositionY()))
+                continue;
+
+            ArchaeologyDigSiteInfo const* info = sArchaeologyMgr->GetDigSiteInfo(siteId);
+            uint32 const progressSize = m_activePlayerData->ResearchSiteProgress[0].size();
+            uint32 const progress = i < progressSize ? m_activePlayerData->ResearchSiteProgress[0][i] : 0;
+            if (!info || progress >= info->FindCount)
+                break;
+
+            float fx, fy;
+            standingOnFind = _EnsureResearchSiteFindLocation(siteId, fx, fy) &&
+                GetExactDist2d(fx, fy) < SURVEY_FIND_DISTANCE;
+            break;
+        }
+    }
+
+    if (standingOnFind)
+    {
+        if (!HasAura(SPELL_ARCHAEOLOGY_STANDING_ON_IT))
+            CastSpell(this, SPELL_ARCHAEOLOGY_STANDING_ON_IT, true);
+    }
+    else if (HasAura(SPELL_ARCHAEOLOGY_STANDING_ON_IT))
+        RemoveAurasDueToSpell(SPELL_ARCHAEOLOGY_STANDING_ON_IT);
+}
+
+void Player::ReplaceResearchSite(uint32 siteIndex, uint32 mapId)
+{
+    // Swap one active dig-site slot for a fresh surveyable site on the same continent (progress
+    // reset). The client picks up the new site from the ResearchSites update field. If the continent
+    // has no other surveyable site the slot is left as-is.
+    uint32 const siteCount = m_activePlayerData->ResearchSites[0].size();
+    if (siteIndex >= siteCount)
+        return;
+
+    std::vector<uint32> activeSites;
+    activeSites.reserve(siteCount);
+    for (uint32 i = 0; i < siteCount; ++i)
+        activeSites.push_back(m_activePlayerData->ResearchSites[0][i]);
+
+    uint32 const replacement = sArchaeologyMgr->RollReplacementSite(mapId, activeSites);
+    if (!replacement)
+        return;
+
+    _researchSiteFindLocations.erase(m_activePlayerData->ResearchSites[0][siteIndex]);
+    SetUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchSites, 0).ModifyValue(siteIndex), uint16(replacement));
+    SetUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchSiteProgress, 0).ModifyValue(siteIndex), 0u);
+
+    float x, y;
+    _EnsureResearchSiteFindLocation(replacement, x, y);
+}
+
+void Player::_LoadResearchSites(PreparedQueryResult result)
+{
+    // Restore persisted active dig sites into the ResearchSites / ResearchSiteProgress update fields.
+    // SELECT researchSiteId, progress, findX, findY FROM character_research_site WHERE guid = ?
+    if (!result)
+        return;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        uint16 siteId = fields[0].GetUInt16();
+        uint32 progress = fields[1].GetUInt32();
+        float findX = fields[2].GetFloat();
+        float findY = fields[3].GetFloat();
+
+        // A persisted row can name any ResearchSite.db2 entry on the continent, including
+        // non-Archaeology overlays such as warfront phases. Do not expose a site the server cannot
+        // drive; InitializeResearchSites replaces the missing slot below.
+        if (!sArchaeologyMgr->IsSurveyableDigSite(siteId))
+        {
+            TC_LOG_WARN("entities.player.loading", "Player::_LoadResearchSites: player ({}, name: '{}') has unsupported research site {}. Replacing it with a surveyable site.",
+                GetGUID().ToString(), GetName(), siteId);
+            continue;
+        }
+
+        AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchSites, 0).ModifyValue()) = siteId;
+        AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchSiteProgress, 0).ModifyValue()) = progress;
+
+        if (sArchaeologyMgr->IsInsideDigSite(siteId, findX, findY))
+            _researchSiteFindLocations[siteId] = { findX, findY };
+        else
+            _EnsureResearchSiteFindLocation(siteId, findX, findY);
+    } while (result->NextRow());
+}
+
+void Player::InitializeResearchSites()
+{
+    // Every continent ArchaeologyMgr can fully drive (branch mapping + polygon + wired find
+    // object) is seeded: Eastern Kingdoms (0), Kalimdor (1), Outland (530), Northrend (571),
+    // Pandaria (870) and, through the Draenor/Legion/BfA companion world SQL, Draenor (1116),
+    // the Broken Isles (1220), Kul Tiras (1642) and Zandalar (1643). The map list is derived
+    // from the loaded stores, so continents added later through the world DB need no core change.
+    //
+    // PROVISIONAL-FROM-FORK (evry/master-track/archaeology 80890c6a9f, extended by eb4525d6bf and
+    // b59c8db8ff): four active sites per continent, and the only eligibility test is "knows the
+    // profession and the site is surveyable". Retail gates dig sites on more than that.
+    if (!HasSkill(SKILL_ARCHAEOLOGY))
+        return;
+
+    std::vector<uint32> activeSites;
+    activeSites.reserve(m_activePlayerData->ResearchSites[0].size() + 16);
+    for (uint16 siteId : m_activePlayerData->ResearchSites[0])
+        activeSites.push_back(siteId);
+
+    for (uint32 mapId : sArchaeologyMgr->GetSurveyableMapIds())
+    {
+        uint32 activeCount = 0;
+        for (uint32 siteId : activeSites)
+            if (ResearchSiteEntry const* site = sResearchSiteStore.LookupEntry(siteId))
+                if (uint32(site->MapID) == mapId)
+                    ++activeCount;
+
+        if (activeCount >= 4)
+            continue;
+
+        for (uint32 siteId : sArchaeologyMgr->RollResearchSitesForMap(mapId, 4 - activeCount, activeSites))
+        {
+            AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchSites, 0).ModifyValue()) = uint16(siteId);
+            AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchSiteProgress, 0).ModifyValue()) = 0u;
+            activeSites.push_back(siteId);
+
+            float x, y;
+            _EnsureResearchSiteFindLocation(siteId, x, y);
+        }
+    }
+}
+
+int32 Player::GetCurrentResearchProject(uint32 branchId) const
+{
+    uint32 const count = m_activePlayerData->Research[0].size();
+    for (uint32 i = 0; i < count; ++i)
+    {
+        int16 projectId = m_activePlayerData->Research[0][i].ResearchProjectID;
+        if (!projectId)
+            continue;
+
+        if (ResearchProjectEntry const* project = sResearchProjectStore.LookupEntry(uint32(projectId)))
+            if (project->ResearchBranchID == branchId)
+                return projectId;
+    }
+    return 0;
+}
+
+std::unordered_set<uint32> Player::GetCompletedResearchProjects() const
+{
+    std::unordered_set<uint32> completed;
+    for (UF::CompletedProject const& project : m_activePlayerData->ResearchHistory->CompletedProjects)
+        completed.insert(project.ProjectID);
+    return completed;
+}
+
+uint32 Player::EnsureResearchProject(uint32 branchId)
+{
+    if (!sArchaeologyMgr->IsResearchBranchEnabled(branchId))
+        return 0;
+
+    if (int32 existing = GetCurrentResearchProject(branchId))
+        return uint32(existing);
+
+    uint32 projectId = sArchaeologyMgr->RollResearchProject(branchId, GetCompletedResearchProjects());
+    if (!projectId)
+        return 0;
+
+    UF::Research& research = AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::Research, 0).ModifyValue());
+    research.ResearchProjectID = int16(projectId);
+    return projectId;
+}
+
+void Player::InitializeResearchProjects()
+{
+    // Backfill a current project for any branch the player already has fragments in but no active
+    // project (e.g. characters that earned fragments before projects were implemented). Fresh fragment
+    // gains assign on the fly in HandleArchaeologySurvey, so this only matters on the first login after
+    // the feature lands. Currencies are already loaded by this point in LoadFromDB.
+    if (!HasSkill(SKILL_ARCHAEOLOGY))
+        return;
+
+    for (ResearchBranchEntry const* branch : sResearchBranchStore)
+    {
+        if (!branch->CurrencyID || GetCurrencyQuantity(branch->CurrencyID) == 0)
+            continue;
+
+        EnsureResearchProject(branch->ID);
+    }
+}
+
+void Player::_LoadResearchProjects(PreparedQueryResult result)
+{
+    // Restore the character's active research projects into the Research update field.
+    // SELECT projectId FROM character_research_project WHERE guid = ?
+    if (!result)
+        return;
+
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 projectId = fields[0].GetUInt32();
+        ResearchProjectEntry const* project = sResearchProjectStore.LookupEntry(projectId);
+        if (!project || !sArchaeologyMgr->IsResearchBranchEnabled(project->ResearchBranchID))
+            continue;
+
+        UF::Research& research = AddDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::Research, 0).ModifyValue());
+        research.ResearchProjectID = int16(projectId);
+    } while (result->NextRow());
+}
+
+bool Player::CanCastResearchProjectSpell(uint32 spellId) const
+{
+    if (!HasSkill(SKILL_ARCHAEOLOGY))
+        return false;
+
+    ResearchProjectEntry const* project = sArchaeologyMgr->GetProjectBySpellId(spellId);
+    if (!project || !sArchaeologyMgr->IsResearchBranchEnabled(project->ResearchBranchID))
+        return false;
+
+    // Only the branch's current project may be solved.
+    if (GetCurrentResearchProject(project->ResearchBranchID) != int32(project->ID))
+        return false;
+
+    return true;
+}
+
+bool Player::CanSolveResearchProject(ArchaeologySolvePlan const& plan) const
+{
+    if (!HasSkill(SKILL_ARCHAEOLOGY) || !sArchaeologyMgr->IsResearchBranchEnabled(plan.BranchID))
+        return false;
+
+    ResearchProjectEntry const* project = sResearchProjectStore.LookupEntry(plan.ProjectID);
+    if (!project || project->ResearchBranchID != plan.BranchID ||
+        project->RequiredWeight != plan.RequiredWeight ||
+        GetCurrentResearchProject(plan.BranchID) != int32(plan.ProjectID))
+        return false;
+
+    if (plan.FragmentCount && !HasCurrency(plan.FragmentCurrencyID, plan.FragmentCount))
+        return false;
+
+    if (plan.KeystoneCount && !HasItemCount(plan.KeystoneItemID, plan.KeystoneCount))
+        return false;
+
+    return true;
+}
+
+bool Player::ConsumeResearchProjectSolveResources(ArchaeologySolvePlan const& plan)
+{
+    if (!CanSolveResearchProject(plan))
+        return false;
+
+    // The final cast check and this commit run synchronously on the player's world thread. Validate
+    // every resource first, then consume the exact normalized plan before the reward spell effect.
+    if (plan.KeystoneCount &&
+        DestroyItemCount(plan.KeystoneItemID, plan.KeystoneCount, true) != plan.KeystoneCount)
+        return false;
+
+    if (plan.FragmentCount)
+        RemoveCurrency(plan.FragmentCurrencyID, plan.FragmentCount, CurrencyDestroyReason::Spell);
+
+    return true;
+}
+
+void Player::CompleteResearchProjectSolve(ArchaeologySolvePlan const& plan)
+{
+    // The script calls this only after its exact resource plan committed. Keep an expected-project
+    // guard so a completed cast cannot finalize a different or already-advanced project.
+    if (GetCurrentResearchProject(plan.BranchID) != int32(plan.ProjectID))
+        return;
+
+    ResearchProjectEntry const* project = sResearchProjectStore.LookupEntry(plan.ProjectID);
+    if (!project)
+        return;
+
+    RecordCompletedProject(plan.ProjectID);
+    UpdateCriteria(CriteriaType::CompleteResearchProject, plan.ProjectID);
+    UpdateCriteria(CriteriaType::CompleteAnyResearchProject, project->Rarity, plan.BranchID);
+    AdvanceResearchProject(plan.BranchID, plan.ProjectID);
+
+    // Solve skill-ups follow SkillLineAbility.NumSkillUps for Archaeology (commons 5 / rares 15).
+    // Spells with no Archaeology SkillLineAbility row grant nothing. Generic UpdateCraftSkill skips
+    // these rows because their SkillupSkillLineID is 0.
+    if (project->SpellID > 0)
+    {
+        SkillLineAbilityMapBounds const bounds = sSpellMgr->GetSkillLineAbilityMapBounds(uint32(project->SpellID));
+        for (SkillLineAbilityMap::const_iterator itr = bounds.first; itr != bounds.second; ++itr)
+        {
+            SkillLineAbilityEntry const* ability = itr->second;
+            if (!ability || ability->SkillLine != SKILL_ARCHAEOLOGY || ability->NumSkillUps <= 0)
+                continue;
+
+            UpdateSkillPro(SKILL_ARCHAEOLOGY, 1000, uint32(ability->NumSkillUps));
+            break;
+        }
+    }
+}
+
+void Player::RecordCompletedProject(uint32 projectId)
+{
+    auto history = m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchHistory);
+
+    // Bump the completion count if this project has been solved before.
+    auto const& completed = m_activePlayerData->ResearchHistory->CompletedProjects;
+    for (uint32 i = 0; i < completed.size(); ++i)
+    {
+        if (uint32(completed[i].ProjectID) == projectId)
+        {
+            auto entry = history.ModifyValue(&UF::ResearchHistory::CompletedProjects, i);
+            SetUpdateFieldValue(entry.ModifyValue(&UF::CompletedProject::CompletionCount), uint32(completed[i].CompletionCount) + 1);
+            return;
+        }
+    }
+
+    auto entry = AddDynamicUpdateFieldValue(history.ModifyValue(&UF::ResearchHistory::CompletedProjects));
+    entry.ModifyValue(&UF::CompletedProject::ProjectID).SetValue(projectId);
+    entry.ModifyValue(&UF::CompletedProject::FirstCompleted).SetValue(int64(GameTime::GetGameTime()));
+    entry.ModifyValue(&UF::CompletedProject::CompletionCount).SetValue(1u);
+}
+
+void Player::AdvanceResearchProject(uint32 branchId, uint32 completedProjectId)
+{
+    // Drop the completed project from the active list, then roll the branch's next project.
+    uint32 const count = m_activePlayerData->Research[0].size();
+    for (uint32 i = 0; i < count; ++i)
+    {
+        if (uint32(m_activePlayerData->Research[0][i].ResearchProjectID) == completedProjectId)
+        {
+            RemoveDynamicUpdateFieldValue(m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::Research, 0).ModifyValue(), i);
+            break;
+        }
+    }
+
+    EnsureResearchProject(branchId);
+}
+
+void Player::_LoadResearchHistory(PreparedQueryResult result)
+{
+    // Restore completed research projects into the ResearchHistory update field.
+    // SELECT projectId, firstCompleted, completionCount FROM character_research_history WHERE guid = ?
+    if (!result)
+        return;
+
+    auto history = m_values.ModifyValue(&Player::m_activePlayerData).ModifyValue(&UF::ActivePlayerData::ResearchHistory);
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 projectId = fields[0].GetUInt32();
+        if (!sResearchProjectStore.HasRecord(projectId))
+            continue;
+
+        auto entry = AddDynamicUpdateFieldValue(history.ModifyValue(&UF::ResearchHistory::CompletedProjects));
+        entry.ModifyValue(&UF::CompletedProject::ProjectID).SetValue(projectId);
+        entry.ModifyValue(&UF::CompletedProject::FirstCompleted).SetValue(fields[1].GetInt64());
+        entry.ModifyValue(&UF::CompletedProject::CompletionCount).SetValue(fields[2].GetUInt32());
+    } while (result->NextRow());
+}
+
 void Player::_LoadSkills(PreparedQueryResult result)
 {
     //                                                           0      1      2    3
@@ -28943,7 +30142,7 @@ void Player::ResummonBattlePetTemporaryUnSummonedIfAny()
 
 bool Player::IsPetNeedBeTemporaryUnsummoned() const
 {
-    return !IsInWorld() || !IsAlive() || HasUnitMovementFlag(MOVEMENTFLAG_FLYING) || HasExtraUnitMovementFlag2(MOVEMENTFLAG3_ADV_FLYING);
+    return !IsInWorld() || !IsAlive() || HasUnitMovementFlag(MOVEMENTFLAG_FLYING) || HasUnitMovementFlag(MOVEMENTFLAG_ADV_FLYING);
 }
 
 bool Player::CanSeeGossipOn(Creature const* creature) const
@@ -30336,6 +31535,20 @@ void Player::AddMoveImpulse(Position direction)
     SendMessageToSet(impulse.Write(), true);
 }
 
+void Player::UpdateDynamicFlight(bool apply)
+{
+    if (apply)
+    {
+        if (!HasAuraType(SPELL_AURA_ADV_FLYING))
+            AddAura(SPELL_DYNAMIC_FLIGHT, this);
+    }
+    else
+    {
+        if (HasAuraType(SPELL_AURA_ADV_FLYING))
+            RemoveAura(SPELL_DYNAMIC_FLIGHT);
+    }
+}
+
 void Player::ApplyTraitConfig(int32 configId, bool apply)
 {
     UF::TraitConfig const* traitConfig = GetTraitConfig(configId);
@@ -31138,8 +32351,10 @@ void Player::SendPlayerChoice(ObjectGuid sender, int32 choiceId)
     displayPlayerChoice.HideWarboardHeader = playerChoice->HideWarboardHeader;
     displayPlayerChoice.KeepOpenAfterChoice = playerChoice->KeepOpenAfterChoice;
     displayPlayerChoice.ShowChoicesAsList = playerChoice->ShowChoicesAsList;
-    displayPlayerChoice.ForceDontShowChoicesAsList = playerChoice->ForceDontShowChoicesAsList;
     displayPlayerChoice.RequiresSelection = playerChoice->RequiresSelection;
+    displayPlayerChoice.ShowChoicesAsGrid = playerChoice->ShowChoicesAsGrid;
+    displayPlayerChoice.HideAnswerArt = playerChoice->HideAnswerArt;
+    displayPlayerChoice.ShowChoicesAsColumns = playerChoice->ShowChoicesAsColumns;
 
     for (std::size_t i = 0; i < playerChoice->Responses.size() && (!playerChoice->MaxResponses || displayPlayerChoice.Responses.size() < *playerChoice->MaxResponses); ++i)
     {
@@ -31223,6 +32438,8 @@ void Player::SendPlayerChoice(ObjectGuid sender, int32 choiceId)
             mawPower.Rarity = playerChoiceResponseTemplate.MawPower->Rarity;
             mawPower.SpellID = playerChoiceResponseTemplate.MawPower->SpellID;
             mawPower.MaxStacks = playerChoiceResponseTemplate.MawPower->MaxStacks;
+
+            displayPlayerChoice.HasPowerChoice = true;
         }
     }
 
@@ -31892,7 +33109,7 @@ void Player::UpdateAverageItemLevelTotal()
                 if (AzeriteItem const* azeriteItem = item->ToAzeriteItem())
                     azeriteLevel = azeriteItem->GetEffectiveLevel();
                 uint32 pvpItemLevel = Item::GetItemLevel(itemTemplate, *item->GetBonus(), GetLevel(),
-                    item->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL), 0, 0, 0, true, azeriteLevel);
+                    item->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL), 0, 0, 0, true, azeriteLevel, 0);
 
                 InventoryType inventoryType = itemTemplate->GetInventoryType();
 
@@ -31918,7 +33135,7 @@ void Player::UpdateAverageItemLevelTotal()
                 if (AzeriteItem const* azeriteItem = item->ToAzeriteItem())
                     azeriteLevel = azeriteItem->GetEffectiveLevel();
                 uint32 pvpItemLevel = Item::GetItemLevel(itemTemplate, *item->GetBonus(), GetLevel(),
-                    item->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL), 0, 0, 0, true, azeriteLevel);
+                    item->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL), 0, 0, 0, true, azeriteLevel, 0);
 
                 InventoryType inventoryType = itemTemplate->GetInventoryType();
                 ForEachEquipmentSlot(inventoryType, m_canDualWield, m_canTitanGrip,
@@ -31998,15 +33215,13 @@ void Player::UpdateAverageItemLevelEquipped()
                 azeriteLevel = azeriteItem->GetEffectiveLevel();
 
             uint32 itemLevel = Item::GetItemLevel(pItem->GetTemplate(), *pItem->GetBonus(), GetLevel(), pItem->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL),
-                0, 0, 0,
-                false, azeriteLevel);
+                0, 0, 0, false, azeriteLevel, 0);
             uint32 itemLevelEffective = Item::GetItemLevel(pItem->GetTemplate(), *pItem->GetBonus(), GetEffectiveLevel(), pItem->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL),
                 m_unitData->MinItemLevel, m_unitData->MinItemLevelCutoff, IsUsingPvpItemLevels() && pItem->GetTemplate()->HasFlag(ITEM_FLAG3_IGNORE_ITEM_LEVEL_CAP_IN_PVP) ? 0 : m_unitData->MaxItemLevel,
-                IsUsingPvpItemLevels(),
-                azeriteLevel);
+                IsUsingPvpItemLevels(), azeriteLevel, 0);
             uint32 pvpItemLevel = Item::GetItemLevel(pItem->GetTemplate(), *pItem->GetBonus(), GetLevel(), pItem->GetModifier(ITEM_MODIFIER_TIMEWALKER_LEVEL),
                 0, 0, 0,
-                true, azeriteLevel);
+                true, azeriteLevel, 0);
             totalItemLevel += itemLevel;
             totalItemLevelEffective += itemLevelEffective;
             totalPvpItemLevel += pvpItemLevel;
@@ -32690,6 +33905,13 @@ void Player::ExecutePendingSpellCastRequest()
             triggerFlag = TRIGGERED_FULL_MASK;
         }
 
+        // The research UI casts a project's own SpellID, which is never learned into the spellbook.
+        // Fail closed unless this exact solve script is enabled and the player's current state permits it;
+        // otherwise the spell's CREATE_ITEM effect could run without the bookkeeping script.
+        if (plrCaster->CanCastResearchProjectSpell(spellInfo->Id) &&
+            sObjectMgr->HasEnabledSpellScript(spellInfo->Id, "spell_archaeology_solve"))
+            allow = true;
+
         if (!allow)
         {
             CancelPendingCastRequest();
@@ -32748,6 +33970,8 @@ void Player::ExecutePendingSpellCastRequest()
 
     spell->m_fromClient = true;
     std::ranges::copy(_pendingSpellCastRequest->CastRequest.Misc, std::ranges::begin(spell->m_misc.Raw.Data));
+    if (!_pendingSpellCastRequest->CastRequest.Weight.empty())
+        spell->m_customArg = std::move(_pendingSpellCastRequest->CastRequest.Weight);
     spell->prepare(targets);
 
     _pendingSpellCastRequest = nullptr;
@@ -32895,8 +34119,6 @@ bool Player::TeleportToDigsiteInMap(uint32 mapId)
 
     if (sites.empty())
         return false;
-
-    //uint32 site_id = Trinity::Containers::SelectRandomContainerElement(sites);
 
     MapEntry const* map = sMapStore.LookupEntry(mapId);
     if (!map)

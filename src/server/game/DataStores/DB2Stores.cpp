@@ -95,6 +95,7 @@ DB2Storage<CharTitlesEntry>                     sCharTitlesStore("CharTitles.db2
 DB2Storage<CharacterLoadoutEntry>               sCharacterLoadoutStore("CharacterLoadout.db2", &CharacterLoadoutLoadInfo::Instance);
 DB2Storage<CharacterLoadoutItemEntry>           sCharacterLoadoutItemStore("CharacterLoadoutItem.db2", &CharacterLoadoutItemLoadInfo::Instance);
 DB2Storage<ChatChannelsEntry>                   sChatChannelsStore("ChatChannels.db2", &ChatChannelsLoadInfo::Instance);
+DB2Storage<ChatProfanityEntry>                  sChatProfanityStore("ChatProfanity.db2", &ChatProfanityLoadInfo::Instance);
 DB2Storage<ChrClassUIDisplayEntry>              sChrClassUIDisplayStore("ChrClassUIDisplay.db2", &ChrClassUiDisplayLoadInfo::Instance);
 DB2Storage<ChrClassesEntry>                     sChrClassesStore("ChrClasses.db2", &ChrClassesLoadInfo::Instance);
 DB2Storage<ChrClassesXPowerTypesEntry>          sChrClassesXPowerTypesStore("ChrClassesXPowerTypes.db2", &ChrClassesXPowerTypesLoadInfo::Instance);
@@ -159,6 +160,8 @@ DB2Storage<CurveEntry>                          sCurveStore("Curve.db2", &CurveL
 DB2Storage<CurvePointEntry>                     sCurvePointStore("CurvePoint.db2", &CurvePointLoadInfo::Instance);
 DB2Storage<DestructibleModelDataEntry>          sDestructibleModelDataStore("DestructibleModelData.db2", &DestructibleModelDataLoadInfo::Instance);
 DB2Storage<DifficultyEntry>                     sDifficultyStore("Difficulty.db2", &DifficultyLoadInfo::Instance);
+DB2Storage<DriveCapabilityEntry>                sDriveCapabilityStore("DriveCapability.db2", &DriveCapabilityLoadInfo::Instance);
+DB2Storage<DriveCapabilityTierEntry>            sDriveCapabilityTierStore("DriveCapabilityTier.db2", &DriveCapabilityTierLoadInfo::Instance);
 DB2Storage<DungeonEncounterEntry>               sDungeonEncounterStore("DungeonEncounter.db2", &DungeonEncounterLoadInfo::Instance);
 DB2Storage<DurabilityCostsEntry>                sDurabilityCostsStore("DurabilityCosts.db2", &DurabilityCostsLoadInfo::Instance);
 DB2Storage<DurabilityQualityEntry>              sDurabilityQualityStore("DurabilityQuality.db2", &DurabilityQualityLoadInfo::Instance);
@@ -197,6 +200,9 @@ DB2Storage<GlyphBindableSpellEntry>             sGlyphBindableSpellStore("GlyphB
 DB2Storage<GlyphPropertiesEntry>                sGlyphPropertiesStore("GlyphProperties.db2", &GlyphPropertiesLoadInfo::Instance);
 DB2Storage<GlyphRequiredSpecEntry>              sGlyphRequiredSpecStore("GlyphRequiredSpec.db2", &GlyphRequiredSpecLoadInfo::Instance);
 DB2Storage<GossipNPCOptionEntry>                sGossipNPCOptionStore("GossipNPCOption.db2", &GossipNpcOptionLoadInfo::Instance);
+DB2Storage<GuildTabardEmblemEntry>              sGuildTabardEmblemStore("GuildTabardEmblem.db2", &GuildTabardEmblemLoadInfo::Instance);
+DB2Storage<GuildTabardBackgroundEntry>          sGuildTabardBackgroundStore("GuildTabardBackground.db2", &GuildTabardBackgroundLoadInfo::Instance);
+DB2Storage<GuildTabardBorderEntry>              sGuildTabardBorderStore("GuildTabardBorder.db2", &GuildTabardBorderLoadInfo::Instance);
 DB2Storage<GuildColorBackgroundEntry>           sGuildColorBackgroundStore("GuildColorBackground.db2", &GuildColorBackgroundLoadInfo::Instance);
 DB2Storage<GuildColorBorderEntry>               sGuildColorBorderStore("GuildColorBorder.db2", &GuildColorBorderLoadInfo::Instance);
 DB2Storage<GuildColorEmblemEntry>               sGuildColorEmblemStore("GuildColorEmblem.db2", &GuildColorEmblemLoadInfo::Instance);
@@ -343,6 +349,7 @@ DB2Storage<QuestV2Entry>                        sQuestV2Store("QuestV2.db2", &Qu
 DB2Storage<QuestXPEntry>                        sQuestXPStore("QuestXP.db2", &QuestXpLoadInfo::Instance);
 DB2Storage<RandPropPointsEntry>                 sRandPropPointsStore("RandPropPoints.db2", &RandPropPointsLoadInfo::Instance);
 DB2Storage<ResearchBranchEntry>                 sResearchBranchStore("ResearchBranch.db2", &ResearchBranchLoadInfo::Instance);
+DB2Storage<ResearchFieldEntry>                  sResearchFieldStore("ResearchField.db2", &ResearchFieldLoadInfo::Instance);
 DB2Storage<ResearchProjectEntry>                sResearchProjectStore("ResearchProject.db2", &ResearchProjectLoadInfo::Instance);
 DB2Storage<ResearchSiteEntry>                   sResearchSiteStore("ResearchSite.db2", &ResearchSiteLoadInfo::Instance);
 DB2Storage<RewardPackEntry>                     sRewardPackStore("RewardPack.db2", &RewardPackLoadInfo::Instance);
@@ -816,6 +823,7 @@ uint32 DB2Manager::LoadStores(std::string const& dataPath, LocaleConstant defaul
     LOAD_DB2(sCharacterLoadoutStore);
     LOAD_DB2(sCharacterLoadoutItemStore);
     LOAD_DB2(sChatChannelsStore);
+    LOAD_DB2(sChatProfanityStore);
     LOAD_DB2(sChrClassUIDisplayStore);
     LOAD_DB2(sChrClassesStore);
     LOAD_DB2(sChrClassesXPowerTypesStore);
@@ -876,6 +884,8 @@ uint32 DB2Manager::LoadStores(std::string const& dataPath, LocaleConstant defaul
     LOAD_DB2(sCurvePointStore);
     LOAD_DB2(sDestructibleModelDataStore);
     LOAD_DB2(sDifficultyStore);
+    LOAD_DB2(sDriveCapabilityStore);
+    LOAD_DB2(sDriveCapabilityTierStore);
     LOAD_DB2(sDungeonEncounterStore);
     LOAD_DB2(sDurabilityCostsStore);
     LOAD_DB2(sDurabilityQualityStore);
@@ -914,6 +924,9 @@ uint32 DB2Manager::LoadStores(std::string const& dataPath, LocaleConstant defaul
     LOAD_DB2(sGlyphPropertiesStore);
     LOAD_DB2(sGlyphRequiredSpecStore);
     LOAD_DB2(sGossipNPCOptionStore);
+    LOAD_DB2(sGuildTabardEmblemStore);
+    LOAD_DB2(sGuildTabardBackgroundStore);
+    LOAD_DB2(sGuildTabardBorderStore);
     LOAD_DB2(sGuildColorBackgroundStore);
     LOAD_DB2(sGuildColorBorderStore);
     LOAD_DB2(sGuildColorEmblemStore);
@@ -1060,6 +1073,7 @@ uint32 DB2Manager::LoadStores(std::string const& dataPath, LocaleConstant defaul
     LOAD_DB2(sQuestXPStore);
     LOAD_DB2(sRandPropPointsStore);
     LOAD_DB2(sResearchBranchStore);
+    LOAD_DB2(sResearchFieldStore);
     LOAD_DB2(sResearchProjectStore);
     LOAD_DB2(sResearchSiteStore);
     LOAD_DB2(sRewardPackStore);
@@ -2393,7 +2407,7 @@ uint32 DB2Manager::GetRedirectedContentTuningId(uint32 contentTuningId, std::spa
             if (block >= redirectFlag.size())
                 continue;
 
-            if (flag & redirectFlag[block])
+            if (redirectFlag[block] & (1u << flag))
                 return conditionalContentTuning->RedirectContentTuningID;
         }
     }
@@ -2500,10 +2514,8 @@ static CurveInterpolationMode DetermineCurveType(CurveEntry const* curve, std::v
         {
             switch (points.size())
             {
-                case 1:
-                    return CurveInterpolationMode::Constant;
                 case 2:
-                    return CurveInterpolationMode::Linear;
+                    return CurveInterpolationMode::Cosine;
                 case 3:
                     return CurveInterpolationMode::Bezier3;
                 case 4:
@@ -2515,11 +2527,15 @@ static CurveInterpolationMode DetermineCurveType(CurveEntry const* curve, std::v
         }
         case 3:
             return CurveInterpolationMode::Cosine;
+        case 4:
+            return CurveInterpolationMode::Constant;
+        case 5:
+            return CurveInterpolationMode::Step;
         default:
             break;
     }
 
-    return points.size() != 1 ? CurveInterpolationMode::Linear : CurveInterpolationMode::Constant;
+    return CurveInterpolationMode::Linear;
 }
 
 float DB2Manager::GetCurveValueAt(uint32 curveId, float x) const
@@ -2533,18 +2549,26 @@ float DB2Manager::GetCurveValueAt(uint32 curveId, float x) const
     if (points.empty())
         return 0.0f;
 
+    if (points.size() == 1)
+        return points[0].Y;
+
     return GetCurveValueAt(DetermineCurveType(curve, points), points, x);
 }
 
 float DB2Manager::GetCurveValueAt(CurveInterpolationMode mode, std::span<DBCPosition2D const> points, float x) const
 {
+    auto findPointIndex = [&](std::size_t pointIndex)
+    {
+        while (pointIndex < points.size() && points[pointIndex].X <= x)
+            ++pointIndex;
+        return pointIndex;
+    };
+
     switch (mode)
     {
         case CurveInterpolationMode::Linear:
         {
-            std::size_t pointIndex = 0;
-            while (pointIndex < points.size() && points[pointIndex].X <= x)
-                ++pointIndex;
+            std::size_t pointIndex = findPointIndex(0);
             if (!pointIndex)
                 return points[0].Y;
             if (pointIndex >= points.size())
@@ -2556,9 +2580,7 @@ float DB2Manager::GetCurveValueAt(CurveInterpolationMode mode, std::span<DBCPosi
         }
         case CurveInterpolationMode::Cosine:
         {
-            std::size_t pointIndex = 0;
-            while (pointIndex < points.size() && points[pointIndex].X <= x)
-                ++pointIndex;
+            std::size_t pointIndex = findPointIndex(0);
             if (!pointIndex)
                 return points[0].Y;
             if (pointIndex >= points.size())
@@ -2570,9 +2592,7 @@ float DB2Manager::GetCurveValueAt(CurveInterpolationMode mode, std::span<DBCPosi
         }
         case CurveInterpolationMode::CatmullRom:
         {
-            std::size_t pointIndex = 1;
-            while (pointIndex < points.size() && points[pointIndex].X <= x)
-                ++pointIndex;
+            std::size_t pointIndex = findPointIndex(1);
             if (pointIndex == 1)
                 return points[1].Y;
             if (pointIndex >= points.size() - 1)
@@ -2632,7 +2652,23 @@ float DB2Manager::GetCurveValueAt(CurveInterpolationMode mode, std::span<DBCPosi
             return tmp[0];
         }
         case CurveInterpolationMode::Constant:
-            return points[0].Y;
+        {
+            std::size_t pointIndex = findPointIndex(0);
+            if (pointIndex == 0)
+                return points[0].Y;
+            if (pointIndex >= points.size())
+                return points.back().Y;
+            return 0.0f;
+        }
+        case CurveInterpolationMode::Step:
+        {
+            std::size_t pointIndex = findPointIndex(0);
+            if (pointIndex == 0)
+                return points[0].Y;
+            if (pointIndex >= points.size())
+                return points.back().Y;
+            return points[pointIndex - 1].Y;
+        }
         default:
             break;
     }

@@ -271,7 +271,6 @@ enum WorldIntConfigs : uint32
     CONFIG_START_PLAYER_LEVEL,
     CONFIG_START_DEATH_KNIGHT_PLAYER_LEVEL,
     CONFIG_START_DEMON_HUNTER_PLAYER_LEVEL,
-    CONFIG_START_EVOKER_PLAYER_LEVEL,
     CONFIG_START_ALLIED_RACE_LEVEL,
     CONFIG_CURRENCY_RESET_HOUR,
     CONFIG_CURRENCY_RESET_DAY,
@@ -439,6 +438,8 @@ enum WorldIntConfigs : uint32
     CONFIG_VISIBILITY_NOTIFY_PERIOD_INSTANCE,
     CONFIG_VISIBILITY_NOTIFY_PERIOD_BATTLEGROUND,
     CONFIG_VISIBILITY_NOTIFY_PERIOD_ARENA,
+    CONFIG_CLUB_STREAM_HISTORY_MAX_MESSAGES,
+    CONFIG_CLUB_STREAM_HISTORY_MAX_DAYS,
     INT_CONFIG_VALUE_COUNT
 };
 
@@ -775,6 +776,7 @@ class TC_GAME_API World
         void UpdateAreaDependentAuras();
 
         bool IsBattlePetJournalLockAcquired(ObjectGuid battlenetAccountGuid);
+        bool IsAccountInventoryLockAcquired(ObjectGuid battlenetAccountGuid, WorldSession const* exclude);
 
         uint32 GetCleaningFlags() const { return m_CleaningFlags; }
         void SetCleaningFlags(uint32 flags) { m_CleaningFlags = flags; }

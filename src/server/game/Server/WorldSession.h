@@ -172,6 +172,9 @@ namespace WorldPackets
         class AutoStoreBankItem;
         class BuyBankTab;
         class UpdateBankTabSettings;
+        class AutoDepositAccountBank;
+        class AccountBankDepositMoney;
+        class AccountBankWithdrawMoney;
         class AutoDepositCharacterBank;
         class BankerActivate;
     }
@@ -258,6 +261,8 @@ namespace WorldPackets
 
         class AlterApperance;
         class EnumCharacters;
+        class GetAccountCharacterList;
+        class GetRegionwideCharacterRestrictionAndMailData;
         class CreateCharacter;
         class CharDelete;
         class CharacterRenameRequest;
@@ -324,16 +329,16 @@ namespace WorldPackets
 
     namespace ClubFinder
     {
-        class RequestPendingClubsList;
-        class RequestClubsData;
-        class RequestSubscribedClubPostingIDs;
-        class ApplicationResponse;
         class ClubFinderPost;
-        class RequestClubsList;
-        class RequestMembershipToClub;
-        class GetApplicantsList;
-        class RespondToApplicant;
-        class WhisperApplicantRequest;
+        class ClubFinderRequestSubscribedClubPostingIds;
+        class ClubFinderRequestClubsData;
+        class ClubFinderRequestClubsList;
+        class ClubFinderRequestMembershipToClub;
+        class ClubFinderGetApplicantsList;
+        class ClubFinderRequestPendingClubsList;
+        class ClubFinderRespondToApplicant;
+        class ClubFinderApplicationResponse;
+        class ClubFinderWhisperApplicantRequest;
     }
 
     namespace Collections
@@ -384,7 +389,6 @@ namespace WorldPackets
         class AcceptGuildInvite;
         class DeclineGuildInvites;
         class GuildDeclineInvitation;
-        class GuildChangeNameRequest;
         class GuildGetRoster;
         class GuildPromoteMember;
         class GuildDemoteMember;
@@ -433,6 +437,14 @@ namespace WorldPackets
         class GuildChallengeUpdateRequest;
         class SaveGuildEmblem;
         class GuildSetAchievementTracking;
+        class GuildRequestRenameStatus;
+        class GuildRequestRenameNameCheck;
+        class GuildRequestRename;
+        class GuildRequestRenameRefund;
+        class GuildQueryRecipes;
+        class GuildQueryMemberRecipes;
+        class GuildQueryMembersForRecipe;
+        class GuildChangeNameRequest;
     }
 
     namespace Hotfix
@@ -594,6 +606,9 @@ namespace WorldPackets
         class MoveApplyInertiaAck;
         class MoveRemoveInertiaAck;
         class MoveInitActiveMoverComplete;
+        class MoveAddImpulseAck;
+        class MoveSetCanDriveAck;
+        class MoveStartDriveForward;
     }
 
     namespace NPC
@@ -650,6 +665,7 @@ namespace WorldPackets
         class SetRestrictPingsToAssistants;
         class SendPingUnit;
         class SendPingWorldPoint;
+        class SendPingCooldown;
     }
 
     namespace PerksProgram
@@ -698,6 +714,7 @@ namespace WorldPackets
         class QueryCreature;
         struct NameCacheLookupResult;
         class QueryPlayerNames;
+        class QueryPlayerNamesForCommunity;
         class QueryPageText;
         class QueryNPCText;
         class QueryGameObject;
@@ -933,7 +950,7 @@ enum AccountDataType
 #define NUM_ACCOUNT_DATA_TYPES        20
 
 #define ALL_ACCOUNT_DATA_CACHE_MASK 0x000FFFFFu
-#define GLOBAL_CACHE_MASK           0x000BA515u
+#define GLOBAL_CACHE_MASK           0x000CA515u
 #define PER_CHARACTER_CACHE_MASK    0x00045AEAu
 
 struct AccountData
@@ -1147,6 +1164,9 @@ class TC_GAME_API WorldSession
         void SendAccountDataTimes(ObjectGuid playerGuid, uint32 mask);
         void LoadAccountData(PreparedQueryResult result, uint32 mask);
 
+        void SendRegionwideCharacterRestrictionsData(GuidVector const& characterGuids);
+        void SendRegionwideCharacterMailData(GuidVector const& characterGuids);
+
         void LoadTutorialsData(PreparedQueryResult result);
         void SendTutorialsData();
         void SaveTutorialsData(CharacterDatabaseTransaction trans);
@@ -1289,6 +1309,8 @@ class TC_GAME_API WorldSession
         void HandleCharEnumOpcode(WorldPackets::Character::EnumCharacters& /*enumCharacters*/);
         void HandleCharUndeleteEnumOpcode(WorldPackets::Character::EnumCharacters& /*enumCharacters*/);
         void HandleSetupWarbandGroups(WorldPackets::Character::SetupWarbandGroups& setupWarbandGroups);
+        void HandleGetAccountCharacterList(WorldPackets::Character::GetAccountCharacterList& getAccountCharacterList);
+        void HandleGetRegionwideCharacterRestrictionAndMailData(WorldPackets::Character::GetRegionwideCharacterRestrictionAndMailData& packet);
         void HandleCharDeleteOpcode(WorldPackets::Character::CharDelete& charDelete);
         void HandleCharCreateOpcode(WorldPackets::Character::CreateCharacter& charCreate);
         void HandlePlayerLoginOpcode(WorldPackets::Character::PlayerLogin& playerLogin);
@@ -1360,6 +1382,11 @@ class TC_GAME_API WorldSession
         void HandleMoveRemoveMovementForceAck(WorldPackets::Movement::MoveRemoveMovementForceAck& moveRemoveMovementForceAck);
         void HandleMoveSetModMovementForceMagnitudeAck(WorldPackets::Movement::MovementSpeedAck& setModMovementForceMagnitudeAck);
 
+        // Dragonriding / Inertia / Impulse / Drive
+        void HandleMoveAddImpulseAck(WorldPackets::Movement::MoveAddImpulseAck& moveAddImpulseAck);
+        void HandleMoveSetCanDriveAck(WorldPackets::Movement::MoveSetCanDriveAck& moveSetCanDriveAck);
+        void HandleMoveStartDriveForward(WorldPackets::Movement::MoveStartDriveForward& moveStartDriveForward);
+
         // Inertia
         void HandleMoveApplyInertiaAck(WorldPackets::Movement::MoveApplyInertiaAck& moveApplyInertiaAck);
         void HandleMoveRemoveInertiaAck(WorldPackets::Movement::MoveRemoveInertiaAck& moveRemoveInertiaAck);
@@ -1417,6 +1444,7 @@ class TC_GAME_API WorldSession
         void HandleGameobjectReportUse(WorldPackets::GameObject::GameObjReportUse& packet);
 
         void HandleQueryPlayerNames(WorldPackets::Query::QueryPlayerNames& queryPlayerNames);
+        void HandleQueryPlayerNamesForCommunity(WorldPackets::Query::QueryPlayerNamesForCommunity& queryPlayerNames);
         void HandleQueryTimeOpcode(WorldPackets::Query::QueryTime& queryTime);
         void HandleCreatureQuery(WorldPackets::Query::QueryCreature& packet);
         void HandleGameObjectQueryOpcode(WorldPackets::Query::QueryGameObject& packet);
@@ -1474,6 +1502,7 @@ class TC_GAME_API WorldSession
         void HandleSetRestrictPingsToAssistants(WorldPackets::Party::SetRestrictPingsToAssistants const& setRestrictPingsToAssistants);
         void HandleSendPingUnit(WorldPackets::Party::SendPingUnit const& pingUnit);
         void HandleSendPingWorldPoint(WorldPackets::Party::SendPingWorldPoint const& pingWorldPoint);
+        void HandleSendPingCooldown(WorldPackets::Party::SendPingCooldown const& pingCooldown);
 
         void HandlePetitionBuy(WorldPackets::Petition::PetitionBuy& packet);
         void HandlePetitionShowSignatures(WorldPackets::Petition::PetitionShowSignatures& packet);
@@ -1486,6 +1515,9 @@ class TC_GAME_API WorldSession
         void HandleTurnInPetition(WorldPackets::Petition::TurnInPetition& packet);
 
         void HandleGuildQueryOpcode(WorldPackets::Guild::QueryGuildInfo& query);
+        void HandleGuildQueryRecipes(WorldPackets::Guild::GuildQueryRecipes& packet);
+        void HandleGuildQueryMemberRecipes(WorldPackets::Guild::GuildQueryMemberRecipes& packet);
+        void HandleGuildQueryMembersForRecipe(WorldPackets::Guild::GuildQueryMembersForRecipe& packet);
         void HandleGuildInviteByName(WorldPackets::Guild::GuildInviteByName& packet);
         void HandleGuildOfficerRemoveMember(WorldPackets::Guild::GuildOfficerRemoveMember& packet);
         void HandleGuildAcceptInvite(WorldPackets::Guild::AcceptGuildInvite& invite);
@@ -1502,6 +1534,10 @@ class TC_GAME_API WorldSession
         void HandleGuildReplaceGuildMaster(WorldPackets::Guild::GuildReplaceGuildMaster& replaceGuildMaster);
         void HandleGuildSetAchievementTracking(WorldPackets::Guild::GuildSetAchievementTracking& packet);
         void HandleGuildGetAchievementMembers(WorldPackets::Achievement::GuildGetAchievementMembers& getAchievementMembers);
+        void HandleGuildRequestRenameStatus(WorldPackets::Guild::GuildRequestRenameStatus& packet);
+        void HandleGuildRequestRenameNameCheck(WorldPackets::Guild::GuildRequestRenameNameCheck& packet);
+        void HandleGuildRequestRename(WorldPackets::Guild::GuildRequestRename& packet);
+        void HandleGuildRequestRenameRefund(WorldPackets::Guild::GuildRequestRenameRefund& packet);
         void HandleGuildSetGuildMaster(WorldPackets::Guild::GuildSetGuildMaster& packet);
         void HandleGuildUpdateMotdText(WorldPackets::Guild::GuildUpdateMotdText& packet);
         void HandleGuildNewsUpdateSticky(WorldPackets::Guild::GuildNewsUpdateSticky& packet);
@@ -1519,16 +1555,17 @@ class TC_GAME_API WorldSession
         void HandleDeclineGuildInvites(WorldPackets::Guild::DeclineGuildInvites& packet);
 
         // Club Finder
-        void HandleClubFinderRequestPendingClubsList(WorldPackets::ClubFinder::RequestPendingClubsList& packet);
-        void HandleClubFinderRequestClubsData(WorldPackets::ClubFinder::RequestClubsData& packet);
-        void HandleClubFinderRequestSubscribedClubPostingIDs(WorldPackets::ClubFinder::RequestSubscribedClubPostingIDs& packet);
-        void HandleClubFinderApplicationResponse(WorldPackets::ClubFinder::ApplicationResponse& packet);
-        void HandleClubFinderPost(WorldPackets::ClubFinder::ClubFinderPost& packet);
-        void HandleClubFinderRequestClubsList(WorldPackets::ClubFinder::RequestClubsList& packet);
-        void HandleClubFinderRequestMembershipToClub(WorldPackets::ClubFinder::RequestMembershipToClub& packet);
-        void HandleClubFinderGetApplicantsList(WorldPackets::ClubFinder::GetApplicantsList& packet);
-        void HandleClubFinderRespondToApplicant(WorldPackets::ClubFinder::RespondToApplicant& packet);
-        void HandleClubFinderWhisperApplicantRequest(WorldPackets::ClubFinder::WhisperApplicantRequest& packet);
+        void HandleClubFinderPost(WorldPackets::ClubFinder::ClubFinderPost& clubFinderPost);
+        void HandleClubFinderRequestSubscribedClubPostingIDs(WorldPackets::ClubFinder::ClubFinderRequestSubscribedClubPostingIds& request);
+        void HandleClubFinderRequestClubsData(WorldPackets::ClubFinder::ClubFinderRequestClubsData& request);
+        void HandleClubFinderRequestClubsList(WorldPackets::ClubFinder::ClubFinderRequestClubsList& request);
+        void HandleClubFinderRequestMembershipToClub(WorldPackets::ClubFinder::ClubFinderRequestMembershipToClub& request);
+        void HandleClubFinderGetApplicantsList(WorldPackets::ClubFinder::ClubFinderGetApplicantsList& request);
+        void HandleClubFinderRequestPendingClubsList(WorldPackets::ClubFinder::ClubFinderRequestPendingClubsList& request);
+        void HandleClubFinderRespondToApplicant(WorldPackets::ClubFinder::ClubFinderRespondToApplicant& request);
+        void HandleClubFinderApplicationResponse(WorldPackets::ClubFinder::ClubFinderApplicationResponse& request);
+        void HandleClubFinderWhisperApplicantRequest(WorldPackets::ClubFinder::ClubFinderWhisperApplicantRequest& request);
+        void SendClubFinderPendingApplications(uint8 type);
 
         void HandleDeclineNeighborhoodInvites(WorldPackets::Housing::DeclineNeighborhoodInvites const& declineNeighborhoodInvites);
 
@@ -1594,6 +1631,9 @@ class TC_GAME_API WorldSession
         void HandleBuyBankTab(WorldPackets::Bank::BuyBankTab const& buyBankTab);
         void HandleUpdateBankTabSettings(WorldPackets::Bank::UpdateBankTabSettings const& updateBankTabSettings);
         void HandleAutoDepositCharacterBank(WorldPackets::Bank::AutoDepositCharacterBank const& autoDepositCharacterBank);
+        void HandleAutoDepositAccountBank(WorldPackets::Bank::AutoDepositAccountBank const& autoDepositAccountBank);
+        void HandleAccountBankDepositMoney(WorldPackets::Bank::AccountBankDepositMoney const& accountBankDepositMoney);
+        void HandleAccountBankWithdrawMoney(WorldPackets::Bank::AccountBankWithdrawMoney const& accountBankWithdrawMoney);
 
         // Black Market
         void HandleBlackMarketOpen(WorldPackets::BlackMarket::BlackMarketOpen& blackMarketOpen);

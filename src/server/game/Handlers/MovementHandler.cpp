@@ -56,8 +56,8 @@ bool WorldSession::ValidateMovementInfo(Unit const* mover, MovementInfo* mi) con
         if (check) \
         { \
             TC_LOG_DEBUG("entities.unit", "Player::ValidateMovementInfo: Violation of MovementFlags found ({}). " \
-                "MovementFlags: {}, MovementFlags2: {}, MovementFlags3: {} for player {}. Mask {} will be removed.", \
-                STRINGIZE(check), mi->GetMovementFlags(), mi->GetExtraMovementFlags(), mi->GetExtraMovementFlags2(), GetPlayer()->GetGUID(), maskToRemove); \
+                "MovementFlags: {} for player {}. Mask {} will be removed.", \
+                STRINGIZE(check), mi->GetMovementFlags(), GetPlayer()->GetGUID(), maskToRemove); \
             mi->RemoveMovementFlag((maskToRemove)); \
         } \
     } while (0)
@@ -483,9 +483,9 @@ void WorldSession::HandleMovementOpcode(OpcodeClient opcode, MovementInfo& movem
 
     Player* plrMover = mover->ToPlayer();
 
-    TC_LOG_TRACE("opcodes.movement", "HandleMovementOpcode Name {}: opcode {} {} Flags {} Flags2 {} Flags3 {} Pos {}",
+    TC_LOG_TRACE("opcodes.movement", "HandleMovementOpcode Name {}: opcode {} {} Flags {} Pos {}",
         mover->GetName(), opcode, GetOpcodeNameForLogging(opcode),
-        movementInfo.flags, movementInfo.flags2, movementInfo.flags3, movementInfo.pos);
+        movementInfo.flags, movementInfo.pos);
 
     // ignore, waiting processing in WorldSession::HandleMoveWorldportAckOpcode and WorldSession::HandleMoveTeleportAck
     if (plrMover && plrMover->IsBeingTeleported())
@@ -1056,4 +1056,37 @@ void WorldSession::ComputeNewClockDelta()
         _player->SetPlayerLocalFlag(PLAYER_LOCAL_FLAG_OVERRIDE_TRANSPORT_SERVER_TIME);
         _player->SetTransportServerTime(int32(_timeSyncClockDelta));
     }
+}
+
+void WorldSession::HandleMoveAddImpulseAck(WorldPackets::Movement::MoveAddImpulseAck& moveAddImpulseAck)
+{
+    Unit* mover = _player->m_unitMovedByMe;
+    ASSERT(mover != nullptr);
+    ValidateMovementInfo(mover, &moveAddImpulseAck.Ack.Status);
+
+    if (moveAddImpulseAck.Ack.Status.guid != mover->GetGUID())
+    {
+        TC_LOG_ERROR("network", "HandleMoveAddImpulseAck: guid error, expected {}, got {}",
+            mover->GetGUID().ToString(), moveAddImpulseAck.Ack.Status.guid.ToString());
+        return;
+    }
+
+    moveAddImpulseAck.Ack.Status.time = AdjustClientMovementTime(moveAddImpulseAck.Ack.Status.time);
+
+    WorldPackets::Movement::MoveUpdateAddImpulse updateAddImpulse;
+    updateAddImpulse.Status = &moveAddImpulseAck.Ack.Status;
+    mover->SendMessageToSet(updateAddImpulse.Write(), false);
+}
+
+void WorldSession::HandleMoveSetCanDriveAck(WorldPackets::Movement::MoveSetCanDriveAck& moveSetCanDriveAck)
+{
+    Unit* mover = _player->m_unitMovedByMe;
+    if (!mover)
+        return;
+    ValidateMovementInfo(mover, &moveSetCanDriveAck.Ack.Status);
+}
+
+void WorldSession::HandleMoveStartDriveForward(WorldPackets::Movement::MoveStartDriveForward& moveStartDriveForward)
+{
+    HandleMovementOpcode(CMSG_MOVE_START_DRIVE_FORWARD, moveStartDriveForward.Status);
 }

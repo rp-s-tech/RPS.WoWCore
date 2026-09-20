@@ -32,6 +32,7 @@
 #include "GameTime.h"
 #include "Group.h"
 #include "Guild.h"
+#include "ClubStreamHistoryMgr.h"
 #include "GuildMgr.h"
 #include "Hyperlinks.h"
 #include "IpAddress.h"
@@ -664,6 +665,10 @@ void WorldSession::LogoutPlayer(bool save)
         if (_battlePetMgr->HasJournalLock())
             _battlePetMgr->ToggleJournalLock(false);
 
+        ///- Release account-wide bank inventory lock
+        if (_player->HasPlayerLocalFlag(PLAYER_LOCAL_FLAG_HAS_ACCOUNT_BANK_LOCK))
+            _player->RemovePlayerLocalFlag(PLAYER_LOCAL_FLAG_HAS_ACCOUNT_BANK_LOCK);
+
         ///- Clear whisper whitelist
         _player->ClearWhisperWhiteList();
 
@@ -689,6 +694,10 @@ void WorldSession::LogoutPlayer(bool save)
 
         ///- Leave all channels before player delete...
         _player->CleanupChannels();
+
+        // Drop the player's live club stream subscription/focus state; it is re-established on the
+        // next login by the club subscribe RPCs.
+        sClubStreamHistoryMgr->ClearSessionState(_player->GetGUID());
 
         ///- If the player is in a group (or invited), remove him. If the group if then only 1 person, disband the group.
         _player->UninviteFromGroup();

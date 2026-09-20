@@ -158,17 +158,16 @@ typedef std::unordered_multimap<uint32 /*type*/, uint32 /*spellId*/> SpellImmune
 
 enum UnitModifierFlatType
 {
-    BASE_VALUE = 0,
-    BASE_PCT_EXCLUDE_CREATE = 1,    // percent modifier affecting all stat values from auras and gear but not player base for level
-    TOTAL_VALUE = 2,
-    MODIFIER_TYPE_FLAT_END = 3
+    BASE_VALUE = 0,                // flat value containing only fixed create stats, e.g. player_classlevelstats
+    TOTAL_VALUE = 1,               // flat value containing flat modfiers from gear and auras
+    MODIFIER_TYPE_FLAT_END
 };
 
 enum UnitModifierPctType
 {
-    BASE_PCT = 0,
-    TOTAL_PCT = 1,
-    MODIFIER_TYPE_PCT_END = 2
+    BASE_PCT = 0,                  // percent modifier affecting only BASE_VALUE
+    TOTAL_PCT = 1,                 // percent modifier affecting BASE_VALUE and TOTAL_VALUE
+    MODIFIER_TYPE_PCT_END
 };
 
 enum WeaponDamageRange
@@ -1168,7 +1167,7 @@ class TC_GAME_API Unit : public WorldObject
         bool IsWalking() const { return m_movementInfo.HasMovementFlag(MOVEMENTFLAG_WALKING); }
         bool IsHovering() const { return m_movementInfo.HasMovementFlag(MOVEMENTFLAG_HOVER); }
         bool SetWalk(bool enable);
-        bool SetDisableGravity(bool disable, bool updateAnimTier = true);
+        bool SetDisableGravity(bool disable, bool updateAnimTier = true, bool updatePlayHoverAnim = true);
         bool SetFall(bool enable);
         bool SetSwim(bool enable);
         bool SetCanFly(bool enable);
@@ -1433,7 +1432,7 @@ class TC_GAME_API Unit : public WorldObject
         void InitStatBuffMods();
         void UpdateStatBuffMod(Stats stat);
         void UpdateStatBuffModForClient(Stats stat);
-        void SetCreateStat(Stats stat, float val) { m_createStats[stat] = val; }
+        void SetCreateStat(Stats stat, float val);
         void SetCreateHealth(uint32 val) { SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::BaseHealth), val); }
         uint32 GetCreateHealth() const { return m_unitData->BaseHealth; }
         void SetCreateMana(uint32 val) { SetUpdateFieldValue(m_values.ModifyValue(&Unit::m_unitData).ModifyValue(&UF::UnitData::BaseMana), val); }
@@ -1442,7 +1441,7 @@ class TC_GAME_API Unit : public WorldObject
         virtual int32 GetCreatePowerValue(Powers power) const;
         float GetPosStat(Stats stat) const { return m_unitData->StatPosBuff[stat]; }
         float GetNegStat(Stats stat) const { return m_unitData->StatNegBuff[stat]; }
-        float GetCreateStat(Stats stat) const { return m_createStats[stat]; }
+        float GetCreateStat(Stats stat) const;
 
         uint32 GetChannelSpellId() const { return m_unitData->ChannelData->SpellID; }
         void SetChannelSpellId(uint32 channelSpellId)
@@ -1784,23 +1783,11 @@ class TC_GAME_API Unit : public WorldObject
         void PauseMovement(uint32 timer = 0, uint8 slot = 0, bool forced = true); // timer in ms
         void ResumeMovement(uint32 timer = 0, uint8 slot = 0); // timer in ms
 
-        void AddUnitMovementFlag(uint32 f) { m_movementInfo.AddMovementFlag(f); }
-        void RemoveUnitMovementFlag(uint32 f) { m_movementInfo.RemoveMovementFlag(f); }
-        bool HasUnitMovementFlag(uint32 f) const { return m_movementInfo.HasMovementFlag(f); }
-        uint32 GetUnitMovementFlags() const { return m_movementInfo.GetMovementFlags(); }
-        void SetUnitMovementFlags(uint32 f) { m_movementInfo.SetMovementFlags(f); }
-
-        void AddExtraUnitMovementFlag(uint32 f) { m_movementInfo.AddExtraMovementFlag(f); }
-        void RemoveExtraUnitMovementFlag(uint32 f) { m_movementInfo.RemoveExtraMovementFlag(f); }
-        bool HasExtraUnitMovementFlag(uint32 f) const { return m_movementInfo.HasExtraMovementFlag(f); }
-        uint32 GetExtraUnitMovementFlags() const { return m_movementInfo.GetExtraMovementFlags(); }
-        void SetExtraUnitMovementFlags(uint32 f) { m_movementInfo.SetExtraMovementFlags(f); }
-
-        void AddExtraUnitMovementFlag2(uint32 f) { m_movementInfo.AddExtraMovementFlag2(f); }
-        void RemoveExtraUnitMovementFlag2(uint32 f) { m_movementInfo.RemoveExtraMovementFlag2(f); }
-        bool HasExtraUnitMovementFlag2(uint32 f) const { return m_movementInfo.HasExtraMovementFlag2(f); }
-        uint32 GetExtraUnitMovementFlags2() const { return m_movementInfo.GetExtraMovementFlags2(); }
-        void SetExtraUnitMovementFlags2(uint32 f) { m_movementInfo.SetExtraMovementFlags2(f); }
+        void AddUnitMovementFlag(MovementFlags f) { m_movementInfo.AddMovementFlag(f); }
+        void RemoveUnitMovementFlag(MovementFlags f) { m_movementInfo.RemoveMovementFlag(f); }
+        bool HasUnitMovementFlag(MovementFlags f) const { return m_movementInfo.HasMovementFlag(f); }
+        MovementFlags GetUnitMovementFlags() const { return m_movementInfo.GetMovementFlags(); }
+        void SetUnitMovementFlags(MovementFlags f) { m_movementInfo.SetMovementFlags(f); }
 
         bool IsSplineEnabled() const;
         bool IsSplineFinished() const;
@@ -1866,7 +1853,6 @@ class TC_GAME_API Unit : public WorldObject
         virtual bool CanEnterWater() const = 0;
         virtual bool CanSwim() const;
 
-        void CalculateAdvFlyingSpeeds();
         float GetAdvFlyingVelocity() const;
 
         float GetHoverOffset() const { return HasUnitMovementFlag(MOVEMENTFLAG_HOVER) ? *m_unitData->HoverHeight : 0.0f; }
@@ -1942,6 +1928,10 @@ class TC_GAME_API Unit : public WorldObject
 
         UF::UpdateField<UF::UnitData, int32(WowCS::EntityFragment::CGObject), TYPEID_UNIT> m_unitData;
 
+        void SendAddImpulse(Position const& direction);
+        int32 GetDriveCapabilityID() const { return m_unitData->DriveCapabilityID; }
+        void SetDriveCapabilityID(int32 driveCapabilityId, bool clientUpdate);
+
     protected:
         explicit Unit (bool isWorldObject);
 
@@ -1957,7 +1947,6 @@ class TC_GAME_API Unit : public WorldObject
 
         bool m_ControlledByPlayer;
 
-        std::array<float, MAX_STATS> m_createStats;
         std::array<float, MAX_STATS> m_floatStatPosBuff;
         std::array<float, MAX_STATS> m_floatStatNegBuff;
 
@@ -2115,8 +2104,6 @@ class TC_GAME_API Unit : public WorldObject
         std::unordered_map<ObjectGuid, uint32/*entry*/> m_SummonedCreatures;
 
         bool _isCombatDisallowed;
-
-        std::array<float, ADV_FLYING_MAX_SPEED_TYPE> _advFlyingSpeeds;
 
     public:
         TaskScheduler _scheduler;

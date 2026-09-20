@@ -419,6 +419,102 @@ void Creature::SetOutfit(std::shared_ptr<CreatureOutfit> const& outfit)
     }
 }
 
+namespace
+{
+    constexpr uint32 OUTFIT_REVEAL_START_DELAY  = 1500;  // ms - client must have built the body from the create packet
+    constexpr uint32 OUTFIT_REVEAL_STEP_DELAY   = 1500;  // ms - hide and restore steps must reach the client in separate frames
+    constexpr uint32 OUTFIT_REVEAL_CONFIRM_TIME = 3000;  // ms - allowed time for the client to request the data again
+    constexpr uint32 OUTFIT_REVEAL_RETRY_DELAY  = 2500;  // ms - pause before restarting an unconfirmed cycle
+    constexpr uint8  OUTFIT_REVEAL_MAX_ATTEMPTS = 12;
+}
+
+void Creature::HandleOutfitRevealRequest(Player* viewer, bool clientHasNoBody)
+{
+    // Only model-swap outfits need the reveal, all others are applied from the first answer.
+    if (!m_outfit || !viewer || !m_outfit->HasModelSwapCustomization())
+        return;
+
+    if (OutfitRevealState* state = Trinity::Containers::MapGetValuePtr(_outfitReveals, viewer->GetGUID()))
+    {
+        if (state->Stage == OUTFIT_REVEAL_WAIT_FOR_CLIENT && !clientHasNoBody)
+            _outfitReveals.erase(viewer->GetGUID()); // client saw the display change and rebuilds - cycle complete
+        else if (clientHasNoBody)
+        {
+            // no body yet (fresh create, or a cycle lost behind the loading screen) - start over
+            state->Stage = OUTFIT_REVEAL_HIDE;
+            state->NextTime = GameTime::GetGameTimeMS() + OUTFIT_REVEAL_START_DELAY;
+        }
+        return;
+    }
+
+    if (!clientHasNoBody)
+        return;
+
+    OutfitRevealState& state = _outfitReveals[viewer->GetGUID()];
+    state.Stage = OUTFIT_REVEAL_HIDE;
+    state.Attempts = 0;
+    state.NextTime = GameTime::GetGameTimeMS() + OUTFIT_REVEAL_START_DELAY;
+}
+
+void Creature::UpdateOutfitReveals()
+{
+    if (_outfitReveals.empty())
+        return;
+
+    uint32 now = GameTime::GetGameTimeMS();
+
+    for (auto itr = _outfitReveals.begin(); itr != _outfitReveals.end();)
+    {
+        Player* viewer = ObjectAccessor::FindPlayer(itr->first);
+        if (!viewer || !m_outfit)
+        {
+            itr = _outfitReveals.erase(itr);
+            continue;
+        }
+
+        OutfitRevealState& state = itr->second;
+        if (now < state.NextTime)
+        {
+            ++itr;
+            continue;
+        }
+
+        switch (state.Stage)
+        {
+            case OUTFIT_REVEAL_HIDE:
+            {
+                // SetDisplayId resets the outfit for non-matching ids - keep our copy alive.
+                std::shared_ptr<CreatureOutfit> outfit = m_outfit;
+                SetDisplayId(CreatureOutfit::invisible_model);
+                m_outfit = std::move(outfit);
+                SendUpdateToPlayer(viewer);
+                state.Stage = OUTFIT_REVEAL_RESTORE;
+                state.NextTime = now + OUTFIT_REVEAL_STEP_DELAY;
+                break;
+            }
+            case OUTFIT_REVEAL_RESTORE:
+                SetDisplayId(m_outfit->GetDisplayId());
+                SendUpdateToPlayer(viewer);
+                state.Stage = OUTFIT_REVEAL_WAIT_FOR_CLIENT;
+                state.NextTime = now + OUTFIT_REVEAL_CONFIRM_TIME;
+                break;
+            case OUTFIT_REVEAL_WAIT_FOR_CLIENT:
+                // no re-request arrived in time - the client missed the cycle, retry
+                if (++state.Attempts >= OUTFIT_REVEAL_MAX_ATTEMPTS)
+                {
+                    TC_LOG_DEBUG("entities.unit", "Creature {} failed to reveal outfit to viewer {} after {} attempts", GetGUID().ToString(), itr->first.ToString(), state.Attempts);
+                    itr = _outfitReveals.erase(itr);
+                    continue;
+                }
+                state.Stage = OUTFIT_REVEAL_HIDE;
+                state.NextTime = now + OUTFIT_REVEAL_RETRY_DELAY;
+                break;
+        }
+
+        ++itr;
+    }
+}
+
 void Creature::SendMirrorSound(Player* target, uint8 type)
 {
     std::shared_ptr<CreatureOutfit> const& outfit = GetOutfit();
@@ -835,6 +931,8 @@ void Creature::ApplyAllStaticFlags(CreatureStaticFlagsHolder const& flags)
 
 void Creature::Update(uint32 diff)
 {
+    UpdateOutfitReveals();
+
 #ifdef _WIN32
     if (m_outfit && !m_values.HasChanged(GetUpdateFieldHolderIndex(&UF::UnitData::DisplayID)) && Unit::GetDisplayId() == CreatureOutfit::invisible_model)
 #else
@@ -2312,17 +2410,14 @@ float Creature::GetAttackDistance(Unit const* player) const
     float maxRadius = 45.0f * aggroRate;
     float minRadius = 5.0f * aggroRate;
 
-    int32 expansionMaxLevel = int32(GetMaxLevelForExpansion(GetCreatureTemplate()->RequiredExpansion));
+    int32 expansionMaxLevel = int32(GetMaxLevelForExpansion(GetCreatureDifficulty()->GetHealthScalingExpansion()));
     int32 playerLevel = player->GetLevelForTarget(this);
     int32 creatureLevel = GetLevelForTarget(player);
-    int32 levelDifference = creatureLevel - playerLevel;
 
-    // The aggro radius for creatures with equal level as the player is 20 yards.
+    // The aggro radius for creatures with equal level as the player is 15 yards.
     // The combatreach should not get taken into account for the distance so we drop it from the range (see Supremus as expample)
-    float baseAggroDistance = 20.0f - GetCombatReach();
-
-    // + - 1 yard for each level difference between player and creature
-    float aggroRadius = baseAggroDistance + float(levelDifference);
+    float baseAggroDistance = 15.0f - GetCombatReach();
+    float aggroRadius = baseAggroDistance;
 
     // detect range auras
     if (uint32(creatureLevel + 5) <= sWorld->getIntConfig(CONFIG_MAX_PLAYER_LEVEL))
@@ -2336,6 +2431,8 @@ float Creature::GetAttackDistance(Unit const* player) const
     // The following code is used for blizzlike behaviour such as skippable bosses
     if (creatureLevel > expansionMaxLevel)
         aggroRadius = baseAggroDistance + float(expansionMaxLevel - playerLevel);
+    else // + - 1 yard for each level difference between player and creature
+        aggroRadius += float(creatureLevel - playerLevel);
 
     // Make sure that we wont go over the total range limits
     if (aggroRadius > maxRadius)
@@ -3073,12 +3170,20 @@ Position Creature::GetRespawnPosition(float* dist) const
 void Creature::InitializeMovementCapabilities()
 {
     SetHover(GetMovementTemplate().IsHoverInitiallyEnabled());
-    SetDisableGravity(IsFloating());
-    SetControlled(IsSessile(), UNIT_STATE_ROOT);
 
-    // If an amphibious creatures was swimming while engaged, disable swimming again
-    if (IsAmphibious() && !_staticFlags.HasFlag(CREATURE_STATIC_FLAG_CAN_SWIM))
-        RemoveUnitFlag(UNIT_FLAG_CAN_SWIM);
+    // CREATURE_STATIC_FLAG_FLOATING disables gravity and plays hover anim
+    UpdateFloatingMovementFlags();
+
+    // CREATURE_STATIC_FLAG_SESSILE disables gravity and applies root
+    UpdateSessileMovementFlags();
+
+    if (CanOnlySwimIfTargetSwims())
+    {
+        SetUnitFlag2(UNIT_FLAG2_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS);
+        SetSwim(false);
+    }
+    else
+        RemoveUnitFlag2(UNIT_FLAG2_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS);
 
     UpdateMovementCapabilities();
 }
@@ -3095,12 +3200,66 @@ void Creature::UpdateMovementCapabilities()
     if (!isInAir)
         RemoveUnitMovementFlag(MOVEMENTFLAG_FALLING);
 
-    // Some Amphibious creatures toggle swimming while engaged
-    if (IsAmphibious() && !HasUnitFlag(UNIT_FLAG_CANT_SWIM) && !HasUnitFlag(UNIT_FLAG_CAN_SWIM) && IsEngaged())
-        if (!CanOnlySwimIfTargetSwims() || (GetVictim() && !GetVictim()->IsOnOceanFloor()))
-            SetUnitFlag(UNIT_FLAG_CAN_SWIM);
+    if (HasUnitFlag2(UNIT_FLAG2_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS))
+        if (GetVictim() && GetVictim()->IsInWater() && !GetVictim()->IsOnOceanFloor())
+            RemoveUnitFlag2(UNIT_FLAG2_AI_WILL_ONLY_SWIM_IF_TARGET_SWIMS);
 
-    SetSwim(IsInWater() && CanSwim());
+    if (IsInWater() && CanSwim())
+        SetSwim(true);
+    else if (!IsInWater()) // We do not want to disable swimming again when a creature is in water - may to lead some nasty bugs
+        SetSwim(false);
+}
+
+void Creature::SetFloating(bool floating)
+{
+    _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_FLOATING, floating);
+    UpdateFloatingMovementFlags();
+}
+
+void Creature::UpdateFloatingMovementFlags()
+{
+    if (IsFloating())
+        SetDisableGravity(true, false);
+    else
+    {
+        if (IsSessile() ||
+            HasAuraType(SPELL_AURA_MOD_ROOT_DISABLE_GRAVITY) ||
+            HasAuraType(SPELL_AURA_MOD_STUN_DISABLE_GRAVITY) ||
+            HasAuraType(SPELL_AURA_DISABLE_GRAVITY))
+            return;
+
+        SetDisableGravity(false, false);
+    }
+}
+
+void Creature::SetSessile(bool sessile)
+{
+    _staticFlags.ApplyFlag(CREATURE_STATIC_FLAG_SESSILE, sessile);
+    UpdateSessileMovementFlags();
+}
+
+void Creature::UpdateSessileMovementFlags()
+{
+    if (IsSessile())
+    {
+        SetControlled(true, UNIT_STATE_ROOT);
+        SetDisableGravity(true, false, false);
+    }
+    else
+    {
+        if (!HasAuraType(SPELL_AURA_MOD_ROOT_DISABLE_GRAVITY))
+            return;
+
+        if (!HasAuraType(SPELL_AURA_MOD_ROOT))
+            SetControlled(false, UNIT_STATE_ROOT);
+
+        if (IsFloating() ||
+            HasAuraType(SPELL_AURA_MOD_STUN_DISABLE_GRAVITY) ||
+            HasAuraType(SPELL_AURA_DISABLE_GRAVITY))
+            return;
+
+        SetDisableGravity(false, false, false);
+    }
 }
 
 CreatureMovementData const& Creature::GetMovementTemplate() const
@@ -3584,10 +3743,24 @@ void Creature::SetPetitioner(bool apply)
 // overwrite WorldObject function for proper name localization
 std::string Creature::GetNameForLocaleIdx(LocaleConstant locale) const
 {
+    bool const female = GetGender() == GENDER_FEMALE;
+
     if (locale != DEFAULT_LOCALE)
         if (CreatureLocale const* cl = sObjectMgr->GetCreatureLocale(GetEntry()))
+        {
+            // Prefer the feminine form for female creatures, but never lose the
+            // localized name over a missing feminine form (most creatures, including
+            // localized ones, have none).
+            if (female)
+                if (cl->NameAlt.size() > locale && !cl->NameAlt[locale].empty())
+                    return cl->NameAlt[locale];
+
             if (cl->Name.size() > locale && !cl->Name[locale].empty())
                 return cl->Name[locale];
+        }
+
+    if (female && !GetCreatureTemplate()->FemaleName.empty())
+        return GetCreatureTemplate()->FemaleName;
 
     return GetName();
 }

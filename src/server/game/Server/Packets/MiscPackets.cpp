@@ -817,7 +817,7 @@ WorldPacket const* SplashScreenShowLatest::Write()
 WorldPacket const* DisplayToast::Write()
 {
     _worldPacket << uint64(Quantity);
-    _worldPacket << As<uint8>(DisplayToastMethod);
+    _worldPacket << As<uint32>(DisplayToastMethod);
     _worldPacket << uint32(QuestID);
 
     _worldPacket << Bits<1>(Mailed);
@@ -862,6 +862,13 @@ WorldPacket const* PlayerChoiceClear::Write()
 {
     _worldPacket << int32(ChoiceID);
     Status = _worldPacket.ReadBit();
+
+    return &_worldPacket;
+}
+
+WorldPacket const* NotifyMoney::Write()
+{
+    _worldPacket << uint64(Money);
 
     return &_worldPacket;
 }

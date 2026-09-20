@@ -765,12 +765,14 @@ class TC_GAME_API Guild
         time_t GetCreatedDate() const { return m_createdDate; }
         uint64 GetBankMoney() const { return m_bankMoney; }
 
+        bool ModifyBankMoney(uint64 amount, bool add);
+
         bool SetName(std::string_view name);
         void SetRename(bool apply);
 
         // Handle client commands
         void HandleRoster(WorldSession* session);
-        void HandleQuery(WorldSession* session);
+        void HandleQuery(WorldSession* session, ObjectGuid const& queriedGuid);
         void HandleSetAchievementTracking(WorldSession* session, uint32 const* achievementIdsBegin, uint32 const* achievementIdsEnd);
         void HandleGetAchievementMembers(WorldSession* session, uint32 achievementId) const;
         void HandleSetMOTD(WorldSession* session, std::string_view motd);

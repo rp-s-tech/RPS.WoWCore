@@ -432,6 +432,7 @@ REPLACE INTO `creature_model_info` VALUES (116539, 0, 0, 0, 0);
 REPLACE INTO `creature_model_info` VALUES (116687, 0, 0, 0, 0);
 REPLACE INTO `creature_model_info` VALUES (126177, 0, 0, 0, 0);
 REPLACE INTO `creature_model_info` VALUES (113609, 0, 0, 0, 0);
+REPLACE INTO `creature_model_info` VALUES (140847, 0, 0, 0, 0);
 
 -- ----------------------------
 -- Warlock spell fixes
@@ -811,11 +812,12 @@ REPLACE INTO `spell_script_names` VALUES (202157, 'aura_dru_feral_affinity');
 REPLACE INTO `spell_script_names` VALUES (159286, 'spell_dru_primal_fury');
 
 -- ----------------------------
--- Misc fix or changes
+-- Misc fix or changes (spell)
 -- ----------------------------
 
 REPLACE INTO `spell_script_names` VALUES (108897, 'spell_pandaren_faction_choice');
 REPLACE INTO `spell_script_names` VALUES (83958, 'spell_gen_guild_chest');
+REPLACE INTO `spell_script_names` VALUES (406090, 'spell_gen_calm_the_wolf');
 
 REPLACE INTO `creature_template` VALUES (102199, 0, 0, 'Stampede', '', '', NULL, '',	0, 0, 35, 0, 1, 1.14286, 1, 0, 0, 1028, 2000, 1, 1, 1, 33554944, 0, 16777216, 0, 0, 10, 0, '', 0, 1, 0, 0, 0, 0, 1, 0, 0, '', NULL, 53040);
 REPLACE INTO `creature_template` VALUES (73967, 0, 0, 'Niuzao', '', '', NULL, '', 0, 0, 35, 0, 1, 0.857143, 1, 0, 0, 1989, 2000, 1, 1, 1, 32768, 2048, 0, 0, 0, 1, 0, '', 0, 1, 0, 121, 0, 0, 1, 0, 0, '', NULL, 53040);
@@ -827,6 +829,53 @@ REPLACE INTO `spell_linked_spell` VALUES (297729, 299712, 2, 'Transport item - L
 REPLACE INTO `spell_linked_spell` VALUES (299293, 300027, 2, 'Transport item - Comfortable Rider Barding');
 REPLACE INTO `spell_linked_spell` VALUES (296790, 296863, 2, 'Transport item - Inflatable Mount Shoes');
 REPLACE INTO `spell_linked_spell` VALUES (297090, 300031, 2, 'Transport item - Saddlechute');
+REPLACE INTO `spell_linked_spell` VALUES (406087, 406090, 0, 'Worgen - Calm the Wolf');
+
+-- ----------------------------
+-- Misc fix or changes
+-- ----------------------------
+
+DELETE FROM `playercreateinfo` WHERE `race` = 29 AND `class` = 12;  
+INSERT INTO `playercreateinfo`  
+(`race`, `class`, `map`, `position_x`, `position_y`, `position_z`, `orientation`,  
+ `npe_map`, `npe_position_x`, `npe_position_y`, `npe_position_z`, `npe_orientation`,  
+ `npe_transport_guid`, `intro_movie_id`, `intro_scene_id`, `npe_intro_scene_id`)  
+VALUES  
+(29, 12, 1865, 2121, 3318, 54.7061, 0.0872665, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 1903, NULL);
+ 
+DELETE FROM `class_expansion_requirement` WHERE `ClassID` = 12 AND `RaceID` = 29;  
+INSERT INTO `class_expansion_requirement` (`ClassID`, `RaceID`, `ActiveExpansionLevel`, `AccountExpansionLevel`)  
+VALUES (12, 29, 0, 0); 
+ 
+DELETE FROM `playercreateinfo_action` WHERE `race` = 29 AND `class` = 12;  
+INSERT INTO `playercreateinfo_action` (`race`, `class`, `button`, `action`, `type`) VALUES  
+(29, 12, 1, 131347, 0),  
+(29, 12, 2, 188501, 0),  
+(29, 12, 3, 344865, 0),  
+(29, 12, 4, 344859, 0),  
+(29, 12, 5, 344862, 0),  
+(29, 12, 6, 256948, 0);
+
+DELETE FROM `class_expansion_requirement` WHERE `RaceID` IN (86, 91) AND `ClassID` IN (1, 3, 4, 5, 7, 8, 9, 10, 11);
+INSERT INTO `class_expansion_requirement` (`ClassID`, `RaceID`, `ActiveExpansionLevel`, `AccountExpansionLevel`) VALUES
+(1, 86, 11, 11),
+(3, 86, 11, 11),
+(4, 86, 11, 11),
+(5, 86, 11, 11),
+(7, 86, 11, 11),
+(8, 86, 11, 11),
+(9, 86, 11, 11),
+(10, 86, 11, 11),
+(11, 86, 11, 11),
+(1, 91, 11, 11),
+(3, 91, 11, 11),
+(4, 91, 11, 11),
+(5, 91, 11, 11),
+(7, 91, 11, 11),
+(8, 91, 11, 11),
+(9, 91, 11, 11),
+(10, 91, 11, 11),
+(11, 91, 11, 11);
 
 -- ----------------------------
 -- Toys fix
@@ -842,16 +891,11 @@ REPLACE INTO `spell_script_names` VALUES (232592, 'spell_twelve_string_guitar');
 
 REPLACE INTO `spell_linked_spell` VALUES (372771, 372773, 0, 'Dragonriding energy aura');
 
-REPLACE INTO `spell_script_names` VALUES (373646, 'spell_af_skyriding');
-REPLACE INTO `spell_script_names` VALUES (406095, 'spell_af_skyriding');
-REPLACE INTO `spell_script_names` VALUES (430747, 'spell_af_skyriding');
-REPLACE INTO `spell_script_names` VALUES (430833, 'spell_af_skyriding');
-REPLACE INTO `spell_script_names` VALUES (372771, 'spell_af_energy');
 REPLACE INTO `spell_script_names` VALUES (372773, 'spell_af_energy');
 REPLACE INTO `spell_script_names` VALUES (372610, 'spell_af_skyward_ascent');
 REPLACE INTO `spell_script_names` VALUES (374763, 'spell_af_skyward_ascent');
 REPLACE INTO `spell_script_names` VALUES (386451, 'spell_af_skyward_ascent');
 REPLACE INTO `spell_script_names` VALUES (372608, 'spell_af_surge_forward');
-REPLACE INTO `spell_script_names` VALUES (386449, 'spell_af_surge_forward');
 REPLACE INTO `spell_script_names` VALUES (361584, 'spell_af_whirling_surge');
 REPLACE INTO `spell_script_names` VALUES (436854, 'spell_switch_flight');
+REPLACE INTO `spell_script_names` VALUES (392752, 'spell_dragonriding_launch_boost');

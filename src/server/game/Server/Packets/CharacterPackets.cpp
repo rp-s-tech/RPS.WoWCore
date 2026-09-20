@@ -77,6 +77,41 @@ EnumCharacters::EnumCharacters(WorldPacket&& packet) : ClientPacket(std::move(pa
     ASSERT(GetOpcode() == CMSG_ENUM_CHARACTERS || GetOpcode() == CMSG_ENUM_CHARACTERS_DELETED_BY_CLIENT);
 }
 
+void GetAccountCharacterList::Read()
+{
+    _worldPacket >> Token;
+    _worldPacket >> Flags;
+}
+
+WorldPacket const* GetAccountCharacterListResult::Write()
+{
+    _worldPacket << uint32(Token);
+    _worldPacket << Size<uint32>(Characters);
+
+    for (AccountCharacterEntry const& character : Characters)
+    {
+        _worldPacket << character.WowAccount;
+        _worldPacket << character.Guid;
+        _worldPacket << uint32(character.VirtualRealmAddress);
+        _worldPacket << uint8(character.RaceID);
+        _worldPacket << uint8(character.ClassID);
+        _worldPacket << uint8(character.SexID);
+        _worldPacket << uint8(character.ExperienceLevel);
+        _worldPacket << int64(character.LastActiveTime);
+        _worldPacket << int32(character.ContentSetID);
+
+        _worldPacket << SizedString::BitsSize<6>(character.Name);
+        _worldPacket << Bits<3>(0);
+        _worldPacket << SizedString::BitsSize<6>(character.RealmName);
+        _worldPacket.FlushBits();
+
+        _worldPacket << SizedString::Data(character.Name);
+        _worldPacket << SizedString::Data(character.RealmName);
+    }
+
+    return &_worldPacket;
+}
+
 void SetupWarbandGroups::Read()
 {
     uint32 groupCount = _worldPacket.ReadBits(5);
@@ -109,6 +144,55 @@ void SetupWarbandGroups::Read()
         _worldPacket.FlushBits();
         _worldPacket >> SizedString::Data(Groups[i].Name);
     }
+}
+
+void GetRegionwideCharacterRestrictionAndMailData::Read()
+{
+    _worldPacket >> Size<uint32>(CharacterGuids);
+
+    for (ObjectGuid& guid : CharacterGuids)
+        _worldPacket >> guid;
+}
+
+WorldPacket const* RegionwideCharacterRestrictionsData::Write()
+{
+    _worldPacket << Size<uint32>(Characters);
+
+    for (RestrictionEntry const& entry : Characters)
+    {
+        _worldPacket << uint8(entry.Flags);
+        _worldPacket << entry.Guid;
+        _worldPacket << uint32(entry.RestrictionID);
+        _worldPacket << uint32(entry.Unk);
+    }
+
+    return &_worldPacket;
+}
+
+WorldPacket const* RegionwideCharacterMailData::Write()
+{
+    _worldPacket << Size<uint32>(Characters);
+
+    for (MailEntry const& entry : Characters)
+    {
+        _worldPacket << uint8(entry.Type);
+        _worldPacket << entry.Guid;
+        _worldPacket << Size<uint32>(entry.MailSenders);
+        _worldPacket << Size<uint32>(entry.MailSenderTypes);
+
+        if (!entry.MailSenderTypes.empty())
+            _worldPacket.append(entry.MailSenderTypes.data(), entry.MailSenderTypes.size());
+
+        for (std::string const& str : entry.MailSenders)
+            _worldPacket << SizedCString::BitsSize<6>(str);
+
+        _worldPacket.FlushBits();
+
+        for (std::string const& str : entry.MailSenders)
+            _worldPacket << SizedCString::Data(str);
+    }
+
+    return &_worldPacket;
 }
 
 EnumCharactersResult::CharacterInfoBasic::CharacterInfoBasic(Field const* fields)
@@ -360,7 +444,9 @@ ByteBuffer& operator<<(ByteBuffer& data, EnumCharactersResult::ClassUnlock const
 {
     data << int8(classUnlock.ClassID);
     data << uint32(classUnlock.AchievementID);
+    data << Bits<1>(classUnlock.HasExpansion);
     data << Bits<1>(classUnlock.HasUnlockedAchievement);
+    data << Bits<1>(classUnlock.HasEntitlement);
     data.FlushBits();
 
     return data;
@@ -370,15 +456,18 @@ ByteBuffer& operator<<(ByteBuffer& data, EnumCharactersResult::RaceUnlock const&
 {
     data << int8(raceUnlock.RaceID);
     data << Size<uint32>(raceUnlock.ClassUnlocks);
-    data << Bits<1>(raceUnlock.HasUnlockedLicense);
-    data << Bits<1>(raceUnlock.HasUnlockedAchievement);
-    data << Bits<1>(raceUnlock.HasHeritageArmorUnlockAchievement);
-    data << Bits<1>(raceUnlock.HideRaceOnClient);
-    data << Bits<1>(raceUnlock.FactionBalanceDisabled);
-    data.FlushBits();
 
     for (EnumCharactersResult::ClassUnlock const& classUnlock : raceUnlock.ClassUnlocks)
         data << classUnlock;
+
+    data << Bits<1>(raceUnlock.HasUnlockedLicense);
+    data << Bits<1>(raceUnlock.HasUnlockedAchievement);
+    data << Bits<1>(raceUnlock.HasHeritageArmorUnlockAchievement);
+    data << Bits<1>(raceUnlock.HasEntitlement);
+    data << Bits<1>(raceUnlock.HideRaceOnClient);
+    data << Bits<1>(raceUnlock.FactionBalanceDisabled);
+    data << Bits<1>(raceUnlock.DoesNotHaveAvailableClasses);
+    data.FlushBits();
 
     return data;
 }
@@ -463,12 +552,6 @@ WorldPacket const* EnumCharactersResult::Write()
     if (ClassDisableMask)
         _worldPacket << uint32(*ClassDisableMask);
 
-    for (UnlockedConditionalAppearance const& unlockedConditionalAppearance : UnlockedConditionalAppearances)
-        _worldPacket << unlockedConditionalAppearance;
-
-    for (RaceLimitDisableInfo const& raceLimitDisableInfo : RaceLimitDisables)
-        _worldPacket << raceLimitDisableInfo;
-
     for (CharacterInfo const& charInfo : Characters)
         _worldPacket << charInfo;
 
@@ -477,6 +560,12 @@ WorldPacket const* EnumCharactersResult::Write()
 
     for (RaceUnlock const& raceUnlock : RaceUnlockData)
         _worldPacket << raceUnlock;
+
+    for (UnlockedConditionalAppearance const& unlockedConditionalAppearance : UnlockedConditionalAppearances)
+        _worldPacket << unlockedConditionalAppearance;
+
+    for (RaceLimitDisableInfo const& raceLimitDisableInfo : RaceLimitDisables)
+        _worldPacket << raceLimitDisableInfo;
 
     for (WarbandGroup const& warbandGroup : WarbandGroups)
         _worldPacket << warbandGroup;
@@ -879,6 +968,14 @@ void SetFactionAtWar::Read()
 void SetFactionNotAtWar::Read()
 {
     _worldPacket >> FactionIndex;
+}
+
+WorldPacket const* SetFactionAtWarResult::Write()
+{
+    _worldPacket << uint32(FactionIndex);
+    _worldPacket << uint16(Flags);
+
+    return &_worldPacket;
 }
 
 void SetFactionInactive::Read()

@@ -1123,8 +1123,11 @@ bool Roleplay::CreateBlankCustomNpc(Player* owner, std::string const& key, std::
     SaveNpcCreatureTemplateToDb(creatureTemplate);
     sObjectMgr->_creatureTemplateStore[creatureTemplate.Entry] = std::move(creatureTemplate);
 
-    EquipmentInfo equipmentInfo;
-    sObjectMgr->_equipmentInfoStore[creatureTemplate.Entry][1] = equipmentInfo;
+    if (sWorld->getBoolConfig(CONFIG_CACHE_DATA_QUERIES))
+        sObjectMgr->_creatureTemplateStore[npcCreatureTemplateId].InitializeQueryData();
+
+    EquipmentInfo equipmentInfo{};
+    sObjectMgr->_equipmentInfoStore[npcCreatureTemplateId][1] = equipmentInfo;
 
     CustomNpcData npcData;
     npcData.key = key;
