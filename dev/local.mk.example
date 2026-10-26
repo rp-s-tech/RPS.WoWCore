@@ -1,0 +1,45 @@
+# Machine settings for the Makefile. `make init` copies this to dev/local.mk
+# (not tracked by git), puts a random password into DB_PASS and fills in the
+# tool paths it finds on this machine. Check the result with `make doctor`.
+# Paths: forward slashes, no trailing slash. $(CURDIR) is this repo.
+
+# Build: CMake preset (see CMakeUserPresets.json) and its config
+PRESET     = dev
+CONFIG     = RelWithDebInfo
+BIN_DIR    = build/$(PRESET)/bin/$(CONFIG)
+
+# Tools
+CMAKE      = C:/Program Files/CMake/bin/cmake.exe
+CTEST      = C:/Program Files/CMake/bin/ctest.exe
+VCVARS     = C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Auxiliary/Build/vcvars64.bat
+VCVARS_VER = 14.44
+MYSQL_DIR  = C:/Program Files/MySQL/MySQL Server 8.0
+OPENSSL_DIR = C:/Program Files/OpenSSL-Win64
+
+# Database. DB_MODE says where the MariaDB server runs:
+#   docker - the site's container (noble-site docker/dev), port 3308, DBs come from the site
+#   native - MariaDB installed on this machine, port 3306, DBs come from dumps (make db-import)
+DB_MODE    = docker
+MARIADB_CONTAINER = noblegarden-mariadb
+MARIADB_DIR = C:/Program Files/MariaDB 11.8
+DB_ROOT_USER = root
+DB_HOST    = 127.0.0.1
+DB_PORT    = 3308
+DB_USER    = wow_core
+DB_PASS    = @CORE_PASS@
+DB_PREFIX  = wow_
+BACKUP_DIR = $(CURDIR)/dev/backups
+DUMP_DIR   = $(CURDIR)/dev/dumps
+
+# Updater mask for worldserver.conf: 0 = off (DBs are shared with the site).
+# `make db-update` runs one update pass with mask 15 regardless of this value.
+UPDATES_MASK = 0
+
+# Local realm row in wow_auth.realmlist (row 1 stays for the site)
+REALM_ID   = 2
+REALM_NAME = NobleNext Local
+
+# Runtime
+DATA_DIR   = C:/wow-data
+LUA_SRC    = C:/NobleNextLua
+TMP_DIR    = $(CURDIR)/build/tmp
