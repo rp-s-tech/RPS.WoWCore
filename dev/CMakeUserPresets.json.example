@@ -1,0 +1,38 @@
+{
+  "version": 5,
+  "configurePresets": [
+    {
+      "name": "machine",
+      "hidden": true,
+      "environment": {
+        "BOOST_ROOT": "C:/local/boost_1_83_0",
+        "BOOST_LIBRARYDIR": "",
+        "MYSQL_ROOT_DIR": "C:/Program Files/MySQL/MySQL Server 8.0",
+        "OPENSSL_ROOT_DIR": "C:/Program Files/OpenSSL-Win64"
+      },
+      "cacheVariables": {
+        "CMAKE_MAKE_PROGRAM": "C:/Program Files/Microsoft Visual Studio/2022/Community/Common7/IDE/CommonExtensions/Microsoft/CMake/Ninja/ninja.exe",
+        "MYSQL_ROOT_DIR": "C:/Program Files/MySQL/MySQL Server 8.0"
+      },
+      "vendor": { "jetbrains.com/clion": { "toolchain": "VS2022" } }
+    },
+    {
+      "name": "dev",
+      "displayName": "dev (RelWithDebInfo)",
+      "inherits": [ "machine", "rel-base" ]
+    },
+    {
+      "name": "dev-debug",
+      "displayName": "dev-debug (Debug)",
+      "inherits": [ "machine", "debug-base" ]
+    }
+  ],
+  "buildPresets": [
+    { "name": "dev", "configurePreset": "dev" },
+    { "name": "dev-debug", "configurePreset": "dev-debug" }
+  ],
+  "testPresets": [
+    { "name": "dev", "configurePreset": "dev", "output": { "outputOnFailure": true } },
+    { "name": "dev-debug", "configurePreset": "dev-debug", "output": { "outputOnFailure": true } }
+  ]
+}

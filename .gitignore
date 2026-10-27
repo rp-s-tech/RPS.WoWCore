@@ -29,3 +29,11 @@ src/server/scripts/Custom/private_work.cpp
 *.csv
 /.zcode
 .zcodeignore
+
+# Local dev setup (dev/README.md)
+/CMakeUserPresets.json
+/dev/local.mk
+/dev/local.my.cnf
+/dev/local.root.cnf
+/dev/backups/
+/dev/dumps/
