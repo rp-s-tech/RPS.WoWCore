@@ -3465,6 +3465,137 @@ void ObjectMgr::LoadItemScriptNames()
     TC_LOG_INFO("server.loading", ">> Loaded {} item script names in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
 }
 
+// NobleNext: single-item version of LoadItemTemplates() + LoadItemTemplateAddon() + LoadItemScriptNames(), keep in sync with them
+bool ObjectMgr::LoadItemTemplate(uint32 itemId)
+{
+    ItemEntry const* db2Data = sItemStore.LookupEntry(itemId);
+    ItemSparseEntry const* sparse = sItemSparseStore.LookupEntry(itemId);
+    if (!db2Data || !sparse)
+        return false;
+
+    ItemTemplate& itemTemplate = _itemTemplateStore[itemId];
+
+    itemTemplate.BasicData = db2Data;
+    itemTemplate.ExtendedData = sparse;
+    itemTemplate.MaxDurability = FillMaxDurability(db2Data->ClassID, db2Data->SubclassID, sparse->InventoryType, sparse->OverallQualityID, sparse->ItemLevel);
+    itemTemplate.ItemSpecClassMask = 0;
+    for (auto& specs : itemTemplate.Specializations)
+        specs.reset();
+
+    if (std::vector<ItemSpecOverrideEntry const*> const* itemSpecOverrides = sDB2Manager.GetItemSpecOverrides(sparse->ID))
+    {
+        for (ItemSpecOverrideEntry const* itemSpecOverride : *itemSpecOverrides)
+        {
+            if (ChrSpecializationEntry const* specialization = sChrSpecializationStore.LookupEntry(itemSpecOverride->SpecID))
+            {
+                itemTemplate.ItemSpecClassMask |= 1 << (specialization->ClassID - 1);
+                itemTemplate.Specializations[0].set(ItemTemplate::CalculateItemSpecBit(specialization));
+                itemTemplate.Specializations[1] |= itemTemplate.Specializations[0];
+                itemTemplate.Specializations[2] |= itemTemplate.Specializations[0];
+            }
+        }
+    }
+    else
+    {
+        ItemSpecStats itemSpecStats(db2Data, sparse);
+
+        for (ItemSpecEntry const* itemSpec : sItemSpecStore)
+        {
+            if (itemSpecStats.ItemType != itemSpec->ItemType)
+                continue;
+
+            bool hasPrimary = itemSpec->PrimaryStat == ITEM_SPEC_STAT_NONE;
+            bool hasSecondary = itemSpec->SecondaryStat == ITEM_SPEC_STAT_NONE;
+            for (uint32 i = 0; i < itemSpecStats.ItemSpecStatCount; ++i)
+            {
+                if (itemSpecStats.ItemSpecStatTypes[i] == itemSpec->PrimaryStat)
+                    hasPrimary = true;
+                if (itemSpecStats.ItemSpecStatTypes[i] == itemSpec->SecondaryStat)
+                    hasSecondary = true;
+            }
+
+            if (!hasPrimary || !hasSecondary)
+                continue;
+
+            if (ChrSpecializationEntry const* specialization = sChrSpecializationStore.LookupEntry(itemSpec->SpecializationID))
+            {
+                if ((1 << (specialization->ClassID - 1)) & sparse->AllowableClass)
+                {
+                    itemTemplate.ItemSpecClassMask |= 1 << (specialization->ClassID - 1);
+                    std::size_t specBit = ItemTemplate::CalculateItemSpecBit(specialization);
+                    itemTemplate.Specializations[0].set(specBit);
+                    if (itemSpec->MaxLevel > 40)
+                        itemTemplate.Specializations[1].set(specBit);
+                    if (itemSpec->MaxLevel >= 110)
+                        itemTemplate.Specializations[2].set(specBit);
+                }
+            }
+        }
+    }
+
+    // Items that have no specializations set can be used by everyone
+    for (auto& specs : itemTemplate.Specializations)
+        if (specs.count() == 0)
+            specs.set();
+
+    // Сброс и перезагрузка эффектов предмета
+    itemTemplate.Effects.clear();
+    for (ItemXItemEffectEntry const* effectEntry : sItemXItemEffectStore)
+    {
+        if (effectEntry->ItemID == itemId)
+        {
+            if (ItemEffectEntry const* effect = sItemEffectStore.LookupEntry(effectEntry->ItemEffectID))
+            {
+                auto effectItr = std::ranges::lower_bound(itemTemplate.Effects, effect->LegacySlotIndex, {}, &ItemEffectEntry::LegacySlotIndex);
+                itemTemplate.Effects.insert(effectItr, effect);
+            }
+        }
+    }
+
+    // Сброс дефолтов перед чтением из базы
+    itemTemplate.ScriptId = 0;
+    itemTemplate.FoodType = 0;
+    itemTemplate.MinMoneyLoot = 0;
+    itemTemplate.MaxMoneyLoot = 0;
+    itemTemplate.FlagsCu = 0;
+    itemTemplate.SpellPPMRate = 0.0f;
+    itemTemplate.RandomBonusListTemplateId = 0;
+    itemTemplate.QuestLogItemId = 0;
+    itemTemplate.ScrappingLootId = 0;
+
+    QueryResult addonResult = WorldDatabase.Query(Trinity::StringFormat(
+        "SELECT Id, FlagsCu, FoodType, MinMoneyLoot, MaxMoneyLoot, ScrappingLootId, SpellPPMChance, RandomBonusListTemplateId, QuestLogItemId FROM item_template_addon WHERE Id = {}", itemId).c_str());
+    if (addonResult)
+    {
+        Field* fields = addonResult->Fetch();
+        uint32 minMoneyLoot = fields[3].GetUInt32();
+        uint32 maxMoneyLoot = fields[4].GetUInt32();
+        if (minMoneyLoot > maxMoneyLoot)
+        {
+            TC_LOG_ERROR("sql.sql", "Minimum money loot specified in `item_template_addon` for item {} was greater than maximum amount, swapping.", itemId);
+            std::swap(minMoneyLoot, maxMoneyLoot);
+        }
+        itemTemplate.FlagsCu = fields[1].GetUInt32();
+        itemTemplate.FoodType = fields[2].GetUInt8();
+        itemTemplate.MinMoneyLoot = minMoneyLoot;
+        itemTemplate.MaxMoneyLoot = maxMoneyLoot;
+        itemTemplate.ScrappingLootId = fields[5].GetUInt32();
+        itemTemplate.SpellPPMRate = fields[6].GetFloat();
+        itemTemplate.RandomBonusListTemplateId = fields[7].GetUInt32();
+        itemTemplate.QuestLogItemId = fields[8].GetInt32();
+    }
+
+    QueryResult scriptResult = WorldDatabase.Query(Trinity::StringFormat(
+        "SELECT ScriptName FROM item_script_names WHERE Id = {}", itemId).c_str());
+    if (scriptResult)
+    {
+        Field* fields = scriptResult->Fetch();
+        itemTemplate.ScriptId = GetScriptId(fields[0].GetStringView());
+    }
+
+    return true;
+}
+
 ItemTemplate const* ObjectMgr::GetItemTemplate(uint32 entry) const
 {
     return Trinity::Containers::MapGetValuePtr(_itemTemplateStore, entry);

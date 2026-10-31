@@ -2078,6 +2078,131 @@ void DB2Manager::LoadHotfixData(uint32 localeMask)
     TC_LOG_INFO("server.loading", ">> Loaded {} hotfix records in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
 }
 
+std::vector<int32> DB2Manager::ReloadHotfixRecords(std::vector<std::pair<uint32, int32>> const& records, uint32 localeMask)
+{
+    if (records.empty())
+        return std::vector<int32>{};
+
+    uint32 oldMSTime = getMSTime();
+
+    std::set<std::pair<uint32, int32>> keys(records.begin(), records.end());
+    std::set<int32> pushIds; // in-memory pushes touching keys
+    for (auto const& [pushId, push] : _hotfixData)
+    {
+        if (std::any_of(push.Records.begin(), push.Records.end(), [&](HotfixRecord const& r) {
+            return keys.contains({ r.TableHash, r.RecordID });
+        }))
+        {
+            pushIds.insert(pushId);
+        }
+    }
+
+    for (int32 id : pushIds)
+        _hotfixData.erase(id);
+
+    std::string where;
+    for (auto const& [tableHash, recordId] : records)
+    {
+        if (!where.empty())
+            where += " OR ";
+        where += Trinity::StringFormat("(TableHash = {} AND RecordId = {})", tableHash, recordId);
+    }
+
+    std::string extra;
+    if (!pushIds.empty())
+    {
+        std::string pushIdList;
+        for (int32 id : pushIds)
+        {
+            if (!pushIdList.empty())
+                pushIdList += ',';
+            pushIdList += std::to_string(id);
+        }
+        extra = Trinity::StringFormat(" OR Id IN ({})", pushIdList);
+    }
+
+    QueryResult result = HotfixDatabase.Query(Trinity::StringFormat(
+        "SELECT Id, UniqueId, TableHash, RecordId, Status FROM hotfix_data "
+        "WHERE Id IN (SELECT Id FROM hotfix_data WHERE {}){} ORDER BY Id",
+        where, extra).c_str());
+
+    std::set<int32> loadedPushIds;
+    std::map<std::pair<uint32, int32>, bool> deletedRecords;
+    uint32 recordCount = 0;
+
+    if (result)
+    {
+        do
+        {
+            Field* fields = result->Fetch();
+
+            int32 id = fields[0].GetInt32();
+            uint32 uniqueId = fields[1].GetUInt32();
+            uint32 tableHash = fields[2].GetUInt32();
+            int32 recordId = fields[3].GetInt32();
+            HotfixRecord::Status status = static_cast<HotfixRecord::Status>(fields[4].GetUInt8());
+            std::bitset<TOTAL_LOCALES> availableDb2Locales = localeMask;
+            if (status == HotfixRecord::Status::Valid && !_stores.contains(tableHash))
+            {
+                HotfixBlobKey key = std::make_pair(tableHash, recordId);
+                for (std::size_t locale = 0; locale < TOTAL_LOCALES; ++locale)
+                {
+                    if (!availableDb2Locales[locale])
+                        continue;
+
+                    if (!_hotfixBlob[locale].contains(key))
+                        availableDb2Locales[locale] = false;
+                }
+
+                if (availableDb2Locales.none())
+                {
+                    TC_LOG_ERROR("sql.sql", "Table `hotfix_data` references unknown DB2 store by hash 0x{:X} and has no reference to `hotfix_blob` in hotfix id {} with RecordID: {}", tableHash, id, recordId);
+                    continue;
+                }
+            }
+
+            HotfixRecord hotfixRecord;
+            hotfixRecord.TableHash = tableHash;
+            hotfixRecord.RecordID = recordId;
+            hotfixRecord.ID.PushID = id;
+            hotfixRecord.ID.UniqueID = uniqueId;
+            hotfixRecord.HotfixStatus = status;
+            hotfixRecord.AvailableLocalesMask = availableDb2Locales.to_ulong();
+
+            if (loadedPushIds.insert(id).second)
+                _hotfixData.erase(id);
+
+            HotfixPush& push = _hotfixData[id];
+            push.Records.push_back(hotfixRecord);
+            push.AvailableLocalesMask |= hotfixRecord.AvailableLocalesMask;
+
+            _maxHotfixId = std::max(_maxHotfixId, id);
+            if (keys.contains({ tableHash, recordId }))
+                deletedRecords[{ tableHash, recordId }] = (status == HotfixRecord::Status::RecordRemoved);
+
+            ++recordCount;
+        } while (result->NextRow());
+    }
+
+    for (int32 id : pushIds)
+    {
+        if (!loadedPushIds.contains(id))
+            TC_LOG_WARN("server.loading", "DB2Manager::ReloadHotfixRecords: hotfix push {} had no rows in DB and was dropped", id);
+    }
+
+    for (auto const& [key, removed] : deletedRecords)
+    {
+        if (removed)
+            if (DB2StorageBase* store = Trinity::Containers::MapGetValuePtr(_stores, key.first))
+                store->EraseRecord(key.second);
+    }
+
+    TC_LOG_INFO("server.loading", "DB2Manager::ReloadHotfixRecords: rebuilt {} pushes ({} records) in {} ms",
+        loadedPushIds.size(), recordCount, GetMSTimeDiffToNow(oldMSTime));
+
+    return std::vector<int32>(loadedPushIds.begin(), loadedPushIds.end());
+}
+
 void DB2Manager::LoadHotfixBlob(uint32 localeMask)
 {
     uint32 oldMSTime = getMSTime();

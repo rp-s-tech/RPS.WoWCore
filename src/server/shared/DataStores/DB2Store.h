@@ -24,6 +24,7 @@
 #include <vector>
 #include <memory>
 #include <atomic>
+#include <string_view>
 
 class ByteBuffer;
 struct DB2LoadInfo;
@@ -53,6 +54,14 @@ struct DB2IndexTableSnapshot
     // Non-copyable, non-movable (immutable after creation)
     DB2IndexTableSnapshot(DB2IndexTableSnapshot const&) = delete;
     DB2IndexTableSnapshot& operator=(DB2IndexTableSnapshot const&) = delete;
+};
+
+// NobleNext: result of DB2StorageBase::LoadRecordFromDB
+enum class DB2RecordLoadResult : uint8
+{
+    Loaded,
+    NotFound,       // table has no row with this id, record untouched
+    SchemaError     // table does not match the storage (see sql.sql log), record untouched
 };
 
 /// Interface class for common access
@@ -91,6 +100,9 @@ public:
     void LoadStringsFrom(std::string const& path, LocaleConstant locale);
     void LoadFromDB();
     void LoadStringsFromDB(LocaleConstant locale);
+    // NobleNext: copy-on-write reload of one record from hotfix db.
+    // Never call while iterating this storage: the commit replaces the snapshot the iterator points into.
+    DB2RecordLoadResult LoadRecordFromDB(uint32 id, std::string_view tableName);
 
 protected:
     /**

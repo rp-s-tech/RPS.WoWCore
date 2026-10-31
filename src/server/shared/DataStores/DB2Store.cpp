@@ -195,3 +195,37 @@ void DB2StorageBase::LoadStringsFromDB(LocaleConstant locale)
     // Commit snapshot after strings are updated
     CommitSnapshot();
 }
+
+DB2RecordLoadResult DB2StorageBase::LoadRecordFromDB(uint32 id, std::string_view tableName)
+{
+    char const* oldRecord = id < _indexTableSize ? _indexTable[id] : nullptr;
+
+    DB2DatabaseLoader loader(_fileName, _loadInfo);
+    bool schemaError = false;
+    char* record = loader.LoadRecord(id, tableName, oldRecord, _stringPool, schemaError);
+    if (!record)
+        return schemaError ? DB2RecordLoadResult::SchemaError : DB2RecordLoadResult::NotFound;
+
+    // The record block is owned by _stringPool like strings (same new char[] allocation, freed in ~DB2StorageBase).
+    // The old record is never freed: ItemTemplate and other indexes keep raw pointers to it.
+    _stringPool.push_back(record);
+
+    if (id >= _indexTableSize)
+    {
+        // Same growth as DB2Storage::SetEntry; readers use their own snapshot copy, so freeing the old array is safe
+        uint32 newSize = id + 1;
+        char** newIndexTable = new char*[newSize];
+        memset(newIndexTable, 0, newSize * sizeof(char*));
+        if (_indexTable)
+            memcpy(newIndexTable, _indexTable, _indexTableSize * sizeof(char*));
+        delete[] _indexTable;
+        _indexTable = newIndexTable;
+        _indexTableSize = newSize;
+    }
+
+    _indexTable[id] = record;
+    _minId = std::min(_minId, id);
+
+    CommitSnapshot();
+    return DB2RecordLoadResult::Loaded;
+}

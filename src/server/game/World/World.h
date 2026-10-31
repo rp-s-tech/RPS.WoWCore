@@ -777,6 +777,7 @@ class TC_GAME_API World
         void UpdateRealmCharCount(uint32 accountId);
 
         LocaleConstant GetAvailableDbcLocale(LocaleConstant locale) const { if (m_availableDbcLocaleMask & (1 << locale)) return locale; else return m_defaultDbcLocale; }
+        uint32 GetAvailableDbcLocaleMask() const { return m_availableDbcLocaleMask; }
 
         // used World DB version
         void LoadDBVersion();

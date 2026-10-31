@@ -1276,6 +1276,7 @@ class TC_GAME_API ObjectMgr
         void LoadItemTemplates();
         void LoadItemTemplateAddon();
         void LoadItemScriptNames();
+        bool LoadItemTemplate(uint32 itemId);
         void LoadQuestTemplateLocale();
         void LoadQuestObjectivesLocale();
         void LoadQuestGreetingLocales();

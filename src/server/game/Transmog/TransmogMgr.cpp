@@ -243,6 +243,28 @@ void TransmogMgr::Load()
             DefaultSituations.push_back(transmogSituation);
 }
 
+// No lock: reload commands run in the world thread while map threads are idle, like the rest of TransmogMgr data
+void TransmogMgr::ReloadItemModifiedAppearances(uint32 itemId, std::vector<uint32> const* explicitImaIds)
+{
+    std::erase_if(ItemModifiedAppearancesByItem, [itemId](auto const& p) { return p.first.first == itemId; });
+
+    if (explicitImaIds)
+    {
+        for (uint32 id : *explicitImaIds)
+        {
+            if (ItemModifiedAppearanceEntry const* appearanceMod = sItemModifiedAppearanceStore.LookupEntry(id))
+                if (appearanceMod->ItemID == itemId)
+                    ItemModifiedAppearancesByItem[{ appearanceMod->ItemID, appearanceMod->ItemAppearanceModifierID }] = appearanceMod;
+        }
+    }
+    else
+    {
+        for (ItemModifiedAppearanceEntry const* appearanceMod : sItemModifiedAppearanceStore)
+            if (appearanceMod->ItemID == itemId)
+                ItemModifiedAppearancesByItem[{ appearanceMod->ItemID, appearanceMod->ItemAppearanceModifierID }] = appearanceMod;
+    }
+}
+
 ItemModifiedAppearanceEntry const* TransmogMgr::GetItemModifiedAppearance(uint32 itemId, uint32 appearanceModId)
 {
     auto itr = ItemModifiedAppearancesByItem.find({ itemId, appearanceModId });

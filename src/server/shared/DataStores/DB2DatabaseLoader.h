@@ -39,6 +39,9 @@ public:
 
     char* Load(bool custom, uint32& records, char**& indexTable, std::vector<char*>& stringPool, uint32& minId);
     void LoadStrings(bool custom, LocaleConstant locale, uint32 records, char** indexTable, std::vector<char*>& stringPool);
+    // NobleNext: builds a fresh copy of one record from `tableName` (+ `tableName`_locale), nullptr if the table has no row with this id
+    // or the table does not match the storage (then schemaError is true)
+    char* LoadRecord(uint32 id, std::string_view tableName, char const* oldRecord, std::vector<char*>& stringPool, bool& schemaError);
     static char* AddString(char const** holder, std::string_view value);
 
 private:

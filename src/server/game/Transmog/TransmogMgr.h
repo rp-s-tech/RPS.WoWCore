@@ -20,6 +20,7 @@
 
 #include "Common.h"
 #include <span>
+#include <vector>
 
 class Player;
 struct ItemModifiedAppearanceEntry;
@@ -69,6 +70,7 @@ inline constexpr std::array<std::string_view, TOTAL_LOCALES> DefaultOutfitName =
 inline constexpr uint32 DefaultOutfitIcon = 134400;
 
 void Load();
+void ReloadItemModifiedAppearances(uint32 itemId, std::vector<uint32> const* explicitImaIds = nullptr);
 
 ItemModifiedAppearanceEntry const* GetItemModifiedAppearance(uint32 itemId, uint32 appearanceModId);
 ItemModifiedAppearanceEntry const* GetDefaultItemModifiedAppearance(uint32 itemId);
