@@ -22,6 +22,7 @@
 #include "Errors.h"
 #include "Log.h"
 #include <cstring>
+#include <limits>
 
 static char const* nullStr = "";
 
@@ -270,6 +271,201 @@ void DB2DatabaseLoader::LoadStrings(bool custom, LocaleConstant locale, uint32 r
             TC_LOG_ERROR("sql.sql", "Hotfix locale table for storage {} references row that does not exist {} locale {}!", _storageName, indexValue, localeNames[locale]);
 
     } while (result->NextRow());
+}
+
+// NobleNext: per-record version of Load() + LoadStrings(), keep the field loop in sync with Load()
+// Text query on purpose: no new prepared statements per table. Rows go verified first, custom last, the last row wins (same as Load(false) then Load(true)).
+char* DB2DatabaseLoader::LoadRecord(uint32 id, std::string_view tableName, char const* oldRecord, std::vector<char*>& stringPool, bool& schemaError)
+{
+    schemaError = false;
+    if (id == std::numeric_limits<uint32>::max())
+    {
+        schemaError = true;
+        return nullptr;
+    }
+    uint32 dbFieldCount = _loadInfo->Meta->GetDbFieldCount();
+    if (_loadInfo->FieldCount != dbFieldCount)
+    {
+        TC_LOG_ERROR("sql.sql", "DB2DatabaseLoader::LoadRecord: storage {} has {} load info fields, meta expects {}", _storageName, _loadInfo->FieldCount, dbFieldCount);
+        schemaError = true;
+        return nullptr;
+    }
+
+    std::string columns;
+    std::string localeColumns;
+    std::string requiredColumns = "'VerifiedBuild'";
+    std::string requiredLocaleColumns = "'ID', 'locale', 'VerifiedBuild'";
+    uint32 localeFieldCount = 0;
+    for (uint32 i = 0; i < dbFieldCount; ++i)
+    {
+        if (!columns.empty())
+            columns += ", ";
+        columns += Trinity::StringFormat("`{}`", _loadInfo->Fields[i].Name);
+        requiredColumns += Trinity::StringFormat(", '{}'", _loadInfo->Fields[i].Name);
+
+        if (_loadInfo->Fields[i].Type == FT_STRING)
+        {
+            localeColumns += Trinity::StringFormat(", `{}_lang`", _loadInfo->Fields[i].Name);
+            requiredLocaleColumns += Trinity::StringFormat(", '{}_lang'", _loadInfo->Fields[i].Name);
+            ++localeFieldCount;
+        }
+    }
+
+    // The database driver terminates on unknown tables/columns; reject schema drift before querying them.
+    auto hasColumns = [](std::string_view table, std::string_view names, uint32 count)
+    {
+        QueryResult schema = HotfixDatabase.Query(Trinity::StringFormat(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+            "AND TABLE_NAME = '{}' AND COLUMN_NAME IN ({})", table, names).c_str());
+        return schema && schema->Fetch()[0].GetUInt64() == count;
+    };
+    if (!hasColumns(tableName, requiredColumns, dbFieldCount + 1)
+        || (localeFieldCount && !hasColumns(std::string(tableName) + "_locale", requiredLocaleColumns, localeFieldCount + 3)))
+    {
+        TC_LOG_ERROR("sql.sql", "Item reload: incompatible columns in {} or its locale table", tableName);
+        schemaError = true;
+        return nullptr;
+    }
+
+    // The left join returns a sentinel for an absent row, but nullptr on SQL failure.
+    QueryResult result = HotfixDatabase.Query(Trinity::StringFormat(
+        "SELECT (`ID` IS NOT NULL), {} FROM (SELECT 1) AS sentinel LEFT JOIN `{}` ON `ID` = {} "
+        "ORDER BY (`VerifiedBuild` > 0) DESC", columns, tableName, id).c_str());
+    if (!result || result->GetFieldCount() != dbFieldCount + 1)
+    {
+        schemaError = true;
+        return nullptr;
+    }
+
+    if (!result->Fetch()[0].GetUInt8())
+        return nullptr;
+
+    uint32 recordSize = _loadInfo->Meta->GetRecordSize();
+
+    // Always a new block: the old record stays valid for raw pointers (ItemTemplate, indexes) and is never written to
+    char* record = new char[recordSize];
+    if (oldRecord)
+        memcpy(record, oldRecord, recordSize); // keeps strings of locales that have no row in the locale table
+    else
+        memset(record, 0, recordSize);
+
+    bool isNew = !oldRecord;
+    std::vector<uint32> localizedOffsets; // FT_STRING slots in field order, same order as the `_lang` columns
+
+    do
+    {
+        Field* fields = result->Fetch() + 1;
+        uint32 offset = 0;
+        localizedOffsets.clear();
+
+        uint32 f = 0;
+        if (!_loadInfo->Meta->HasIndexFieldInData())
+        {
+            *((uint32*)(&record[offset])) = id;
+            offset += 4;
+            ++f;
+        }
+
+        for (uint32 x = 0; x < _loadInfo->Meta->FieldCount; ++x)
+        {
+            for (uint32 z = 0; z < _loadInfo->Meta->Fields[x].ArraySize; ++z)
+            {
+                switch (_loadInfo->Fields[f].Type)
+                {
+                    case FT_FLOAT:
+                        *((float*)(&record[offset])) = fields[f].GetFloat();
+                        offset += 4;
+                        break;
+                    case FT_INT:
+                        *((int32*)(&record[offset])) = fields[f].GetInt32();
+                        offset += 4;
+                        break;
+                    case FT_BYTE:
+                        *((int8*)(&record[offset])) = fields[f].GetInt8();
+                        offset += 1;
+                        break;
+                    case FT_SHORT:
+                        *((int16*)(&record[offset])) = fields[f].GetInt16();
+                        offset += 2;
+                        break;
+                    case FT_LONG:
+                        *((int64*)(&record[offset])) = fields[f].GetInt64();
+                        offset += 8;
+                        break;
+                    case FT_STRING:
+                    {
+                        LocalizedString* slot = (LocalizedString*)(&record[offset]);
+                        if (isNew)
+                            for (char const*& localeStr : slot->Str)
+                                localeStr = nullStr;
+
+                        // Unlike Load(), an empty enUS value really clears the string: the row is the whole truth for this record
+                        if (char* str = AddString(&slot->Str[LOCALE_enUS], fields[f].GetStringView()))
+                            stringPool.push_back(str);
+                        else
+                            slot->Str[LOCALE_enUS] = nullStr;
+
+                        localizedOffsets.push_back(offset);
+                        offset += sizeof(LocalizedString);
+                        break;
+                    }
+                    case FT_STRING_NOT_LOCALIZED:
+                    {
+                        char const** slot = (char const**)(&record[offset]);
+                        if (char* str = AddString(slot, fields[f].GetStringView()))
+                            stringPool.push_back(str);
+                        else
+                            *slot = nullStr;
+
+                        offset += sizeof(char*);
+                        break;
+                    }
+                    default:
+                        ABORT_MSG("Unknown format character '%c' found in " STRING_VIEW_FMT " meta for field %s",
+                            _loadInfo->Fields[f].Type, STRING_VIEW_FMT_ARG(_storageName), _loadInfo->Fields[f].Name);
+                        break;
+                }
+                ++f;
+            }
+        }
+
+        ASSERT(offset == recordSize);
+        isNew = false;
+    } while (result->NextRow());
+
+    if (localizedOffsets.empty())
+        return record;
+
+    QueryResult localeResult = HotfixDatabase.Query(Trinity::StringFormat(
+        "SELECT (`ID` IS NOT NULL), `locale`{} FROM (SELECT 1) AS sentinel LEFT JOIN `{}_locale` ON `ID` = {} "
+        "ORDER BY (`VerifiedBuild` > 0) DESC", localeColumns, tableName, id).c_str());
+    if (!localeResult || localeResult->GetFieldCount() != localizedOffsets.size() + 2)
+    {
+        schemaError = true;
+        delete[] record;
+        return nullptr;
+    }
+
+    do
+    {
+        if (!localeResult->Fetch()[0].GetUInt8())
+            continue;
+        Field* fields = localeResult->Fetch() + 1;
+        LocaleConstant locale = GetLocaleByName(fields[0].GetStringView());
+        if (!IsValidLocale(locale) || locale == LOCALE_enUS)
+            continue;
+
+        for (std::size_t i = 0; i < localizedOffsets.size(); ++i)
+        {
+            char const** slot = &((LocalizedString*)(&record[localizedOffsets[i]]))->Str[locale];
+            if (char* str = AddString(slot, fields[1 + i].GetStringView()))
+                stringPool.push_back(str);
+            else
+                *slot = nullStr;
+        }
+    } while (localeResult->NextRow());
+
+    return record;
 }
 
 char* DB2DatabaseLoader::AddString(char const** holder, std::string_view value)

@@ -571,6 +571,7 @@ public:
     void LoadHotfixData(uint32 localeMask);
     void LoadHotfixBlob(uint32 localeMask);
     void LoadHotfixOptionalData(uint32 localeMask);
+    Optional<std::vector<int32>> ReloadHotfixRecords(std::vector<std::pair<uint32, int32>> const& records, uint32 localeMask);
     uint32 GetHotfixCount() const;
     HotfixContainer const& GetHotfixData() const;
     std::vector<uint8> const* GetHotfixBlobData(uint32 tableHash, int32 recordId, LocaleConstant locale) const;

@@ -1276,6 +1276,9 @@ class TC_GAME_API ObjectMgr
         void LoadItemTemplates();
         void LoadItemTemplateAddon();
         void LoadItemScriptNames();
+        Optional<ItemTemplate> PrepareItemTemplate(uint32 itemId, ItemEntry const* basic,
+            ItemSparseEntry const* sparse, std::vector<ItemEffectEntry const*> effects) const;
+        void PublishItemTemplate(uint32 itemId, ItemTemplate itemTemplate);
         void LoadQuestTemplateLocale();
         void LoadQuestObjectivesLocale();
         void LoadQuestGreetingLocales();

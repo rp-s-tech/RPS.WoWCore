@@ -3473,6 +3473,147 @@ void ObjectMgr::LoadItemScriptNames()
     TC_LOG_INFO("server.loading", ">> Loaded {} item script names in {} ms", count, GetMSTimeDiffToNow(oldMSTime));
 }
 
+// NobleNext: single-item version of LoadItemTemplates() + LoadItemTemplateAddon() + LoadItemScriptNames(), keep in sync with them
+Optional<ItemTemplate> ObjectMgr::PrepareItemTemplate(uint32 itemId, ItemEntry const* db2Data,
+    ItemSparseEntry const* sparse, std::vector<ItemEffectEntry const*> effects) const
+{
+    if (!db2Data || !sparse)
+        return {};
+
+    QueryResult schema = WorldDatabase.Query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND "
+        "((TABLE_NAME = 'item_template_addon' AND COLUMN_NAME IN ('Id', 'FlagsCu', 'FoodType', 'MinMoneyLoot', "
+        "'MaxMoneyLoot', 'ScrappingLootId', 'SpellPPMChance', 'RandomBonusListTemplateId', 'QuestLogItemId')) "
+        "OR (TABLE_NAME = 'item_script_names' AND COLUMN_NAME IN ('Id', 'ScriptName')))");
+    if (!schema || schema->Fetch()[0].GetUInt64() != 11)
+    {
+        TC_LOG_ERROR("sql.sql", "Item reload: incompatible item_template_addon or item_script_names columns");
+        return {};
+    }
+
+    ItemTemplate itemTemplate{};
+    itemTemplate.BasicData = db2Data;
+    itemTemplate.ExtendedData = sparse;
+    itemTemplate.MaxDurability = FillMaxDurability(db2Data->ClassID, db2Data->SubclassID, sparse->InventoryType, sparse->OverallQualityID, sparse->ItemLevel);
+    itemTemplate.ItemSpecClassMask = 0;
+    for (auto& specs : itemTemplate.Specializations)
+        specs.reset();
+
+    if (std::vector<ItemSpecOverrideEntry const*> const* itemSpecOverrides = sDB2Manager.GetItemSpecOverrides(sparse->ID))
+    {
+        for (ItemSpecOverrideEntry const* itemSpecOverride : *itemSpecOverrides)
+        {
+            if (ChrSpecializationEntry const* specialization = sChrSpecializationStore.LookupEntry(itemSpecOverride->SpecID))
+            {
+                itemTemplate.ItemSpecClassMask |= 1 << (specialization->ClassID - 1);
+                itemTemplate.Specializations[0].set(ItemTemplate::CalculateItemSpecBit(specialization));
+                itemTemplate.Specializations[1] |= itemTemplate.Specializations[0];
+                itemTemplate.Specializations[2] |= itemTemplate.Specializations[0];
+            }
+        }
+    }
+    else
+    {
+        ItemSpecStats itemSpecStats(db2Data, sparse);
+
+        for (ItemSpecEntry const* itemSpec : sItemSpecStore)
+        {
+            if (itemSpecStats.ItemType != itemSpec->ItemType)
+                continue;
+
+            bool hasPrimary = itemSpec->PrimaryStat == ITEM_SPEC_STAT_NONE;
+            bool hasSecondary = itemSpec->SecondaryStat == ITEM_SPEC_STAT_NONE;
+            for (uint32 i = 0; i < itemSpecStats.ItemSpecStatCount; ++i)
+            {
+                if (itemSpecStats.ItemSpecStatTypes[i] == itemSpec->PrimaryStat)
+                    hasPrimary = true;
+                if (itemSpecStats.ItemSpecStatTypes[i] == itemSpec->SecondaryStat)
+                    hasSecondary = true;
+            }
+
+            if (!hasPrimary || !hasSecondary)
+                continue;
+
+            if (ChrSpecializationEntry const* specialization = sChrSpecializationStore.LookupEntry(itemSpec->SpecializationID))
+            {
+                if ((1 << (specialization->ClassID - 1)) & sparse->AllowableClass)
+                {
+                    itemTemplate.ItemSpecClassMask |= 1 << (specialization->ClassID - 1);
+                    std::size_t specBit = ItemTemplate::CalculateItemSpecBit(specialization);
+                    itemTemplate.Specializations[0].set(specBit);
+                    if (itemSpec->MaxLevel > 40)
+                        itemTemplate.Specializations[1].set(specBit);
+                    if (itemSpec->MaxLevel >= 110)
+                        itemTemplate.Specializations[2].set(specBit);
+                }
+            }
+        }
+    }
+
+    // Items that have no specializations set can be used by everyone
+    for (auto& specs : itemTemplate.Specializations)
+        if (specs.count() == 0)
+            specs.set();
+
+    itemTemplate.Effects = std::move(effects);
+    std::ranges::sort(itemTemplate.Effects, {}, &ItemEffectEntry::LegacySlotIndex);
+
+    QueryResult addonResult = WorldDatabase.Query(Trinity::StringFormat(
+        "SELECT Id, FlagsCu, FoodType, MinMoneyLoot, MaxMoneyLoot, ScrappingLootId, SpellPPMChance, RandomBonusListTemplateId, QuestLogItemId FROM (SELECT 1) AS sentinel LEFT JOIN item_template_addon ON Id = {}", itemId).c_str());
+    if (!addonResult)
+        return {};
+    if (addonResult->Fetch()[0].GetUInt32OrNull())
+    {
+        Field* fields = addonResult->Fetch();
+        uint32 minMoneyLoot = fields[3].GetUInt32();
+        uint32 maxMoneyLoot = fields[4].GetUInt32();
+        if (minMoneyLoot > maxMoneyLoot)
+        {
+            TC_LOG_ERROR("sql.sql", "Minimum money loot specified in `item_template_addon` for item {} was greater than maximum amount, swapping.", itemId);
+            std::swap(minMoneyLoot, maxMoneyLoot);
+        }
+        itemTemplate.FlagsCu = fields[1].GetUInt32();
+        itemTemplate.FoodType = fields[2].GetUInt8();
+        itemTemplate.MinMoneyLoot = minMoneyLoot;
+        itemTemplate.MaxMoneyLoot = maxMoneyLoot;
+        itemTemplate.ScrappingLootId = fields[5].GetUInt32();
+        itemTemplate.SpellPPMRate = fields[6].GetFloat();
+        itemTemplate.RandomBonusListTemplateId = fields[7].GetUInt32();
+        itemTemplate.QuestLogItemId = fields[8].GetInt32();
+    }
+
+    QueryResult scriptResult = WorldDatabase.Query(Trinity::StringFormat(
+        "SELECT ScriptName FROM (SELECT 1) AS sentinel LEFT JOIN item_script_names ON Id = {}", itemId).c_str());
+    if (!scriptResult)
+        return {};
+    if (scriptResult->Fetch()[0].GetStringOrNull())
+    {
+        std::string_view scriptName = scriptResult->Fetch()[0].GetStringView();
+        if (!scriptName.empty())
+        {
+            auto script = _scriptNamesStore.find(scriptName);
+            if (script == _scriptNamesStore.end())
+            {
+                TC_LOG_ERROR("sql.sql", "Item {} reload references unregistered script {}", itemId, scriptName);
+                return {};
+            }
+            itemTemplate.ScriptId = script->second.Id;
+        }
+    }
+
+    if (itemTemplate.IsRoleplayOnly())
+    {
+        itemTemplate.MaxDurability = 0;
+        itemTemplate.RandomBonusListTemplateId = 0;
+        itemTemplate.Effects.clear();
+    }
+    return itemTemplate;
+}
+
+void ObjectMgr::PublishItemTemplate(uint32 itemId, ItemTemplate itemTemplate)
+{
+    _itemTemplateStore[itemId] = std::move(itemTemplate);
+}
+
 ItemTemplate const* ObjectMgr::GetItemTemplate(uint32 entry) const
 {
     return Trinity::Containers::MapGetValuePtr(_itemTemplateStore, entry);

@@ -195,3 +195,73 @@ void DB2StorageBase::LoadStringsFromDB(LocaleConstant locale)
     // Commit snapshot after strings are updated
     CommitSnapshot();
 }
+
+DB2RecordUpdate DB2StorageBase::PrepareRecordFromDB(uint32 id, std::string_view tableName) const
+{
+    DB2RecordUpdate update;
+    update.Id = id;
+    char const* oldRecord = id < _indexTableSize ? _indexTable[id] : nullptr;
+    DB2DatabaseLoader loader(_fileName, _loadInfo);
+    bool schemaError = false;
+    std::vector<char*> strings;
+    update.Data.reset(loader.LoadRecord(id, tableName, oldRecord, strings, schemaError));
+    for (char* string : strings)
+        update.Strings.emplace_back(string);
+    update.Result = schemaError ? DB2RecordLoadResult::SchemaError
+        : update.Data ? DB2RecordLoadResult::Loaded : DB2RecordLoadResult::NotFound;
+    return update;
+}
+
+void DB2StorageBase::CommitRecord(DB2RecordUpdate update)
+{
+    ASSERT(update.Result == DB2RecordLoadResult::Loaded && update.Data);
+    uint32 id = update.Id;
+    // Old records remain alive for readers that retained raw pointers.
+    for (auto& string : update.Strings)
+        _stringPool.push_back(string.release());
+    char* record = update.Data.release();
+    _stringPool.push_back(record);
+
+    if (id >= _indexTableSize)
+    {
+        uint32 newSize = id + 1;
+        char** newIndexTable = new char*[newSize]();
+        if (_indexTable)
+            memcpy(newIndexTable, _indexTable, _indexTableSize * sizeof(char*));
+        delete[] _indexTable;
+        _indexTable = newIndexTable;
+        _indexTableSize = newSize;
+    }
+
+    _indexTable[id] = record;
+    _minId = std::min(_minId, id);
+    CommitSnapshot();
+}
+
+bool DB2StorageBase::HasNonStringChanges(char const* oldRecord, char const* newRecord) const
+{
+    if (!oldRecord || !newRecord)
+        return oldRecord != newRecord;
+
+    uint32 offset = 0;
+    for (uint32 i = 0; i < _loadInfo->FieldCount; ++i)
+    {
+        uint32 size = 0;
+        bool string = false;
+        switch (_loadInfo->Fields[i].Type)
+        {
+            case FT_BYTE: size = 1; break;
+            case FT_SHORT: size = 2; break;
+            case FT_INT: case FT_FLOAT: size = 4; break;
+            case FT_LONG: size = 8; break;
+            case FT_STRING: size = sizeof(LocalizedString); string = true; break;
+            case FT_STRING_NOT_LOCALIZED: size = sizeof(char*); string = true; break;
+            default: ABORT();
+        }
+        if (!string && memcmp(oldRecord + offset, newRecord + offset, size))
+            return true;
+        offset += size;
+    }
+    ASSERT(offset == _loadInfo->Meta->GetRecordSize());
+    return false;
+}

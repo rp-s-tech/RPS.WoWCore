@@ -57,6 +57,7 @@ class UnitTestDataLoader
                         _store._indexTable[i] = nullptr;
                     for (T& entry : _storage)
                         _store._indexTable[entry.*ID] = reinterpret_cast<char*>(&entry);
+                    _store.CommitSnapshot();
                 }
 
             private:

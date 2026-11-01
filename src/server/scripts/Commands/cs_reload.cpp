@@ -1225,7 +1225,7 @@ public:
     {
         // Reload hotfix data
         TC_LOG_INFO("misc", "Reloading hotfix info...");
-        sDB2Manager.LoadHotfixData(13); //change on your lang mask 
+        sDB2Manager.LoadHotfixData(sWorld->GetAvailableDbcLocaleMask());
 
         // DB2 stores - now thread-safe with RCU (Read-Copy-Update) semantics
         // The DB2StorageBase uses atomic snapshots, so readers always see consistent data
