@@ -71,7 +71,8 @@ bool MeetsCustomizationReqForOutfit(ChrCustomizationReqEntry const* req, Creatur
     if (!req || !req->GetFlags().HasFlag(ChrCustomizationReqFlag::HasRequirements))
         return true;
 
-    if (req->ClassMask && !(req->ClassMask & (1 << (outfit.GetClass() - 1))))
+    uint32 const classId = outfit.GetClass();
+    if (req->ClassMask && (classId < 1 || classId > 32 || !(uint32(req->ClassMask) & (uint32(1) << (classId - 1)))))
         return false;
 
     Races race = Races(outfit.GetRace());
@@ -87,9 +88,9 @@ bool MeetsCustomizationReqForOutfit(ChrCustomizationReqEntry const* req, Creatur
                 bool hasRequiredChoiceForOption = false;
                 for (uint32 requiredChoice : requiredChoicesForOption)
                 {
-                    auto choiceItr = std::find_if(outfit.Customizations.begin(), outfit.Customizations.end(), [requiredChoice](UF::ChrCustomizationChoice const& choice)
+                    auto choiceItr = std::find_if(outfit.Customizations.begin(), outfit.Customizations.end(), [chrCustomizationOptionId, requiredChoice](UF::ChrCustomizationChoice const& choice)
                     {
-                        return choice.ChrCustomizationChoiceID == requiredChoice;
+                        return choice.ChrCustomizationOptionID == chrCustomizationOptionId && choice.ChrCustomizationChoiceID == requiredChoice;
                     });
 
                     if (choiceItr != outfit.Customizations.end())
@@ -146,7 +147,7 @@ bool ValidateCreatureOutfitAppearance(CreatureOutfit const& outfit)
         if (customizationOptionDataItr == options.end())
             return false;
 
-        if (!MeetsCustomizationReqForOutfit(sChrCustomizationReqStore.LookupEntry((*customizationOptionDataItr)->ChrCustomizationReqID), outfit, false))
+        if (!MeetsCustomizationReqForOutfit(sChrCustomizationReqStore.LookupEntry((*customizationOptionDataItr)->ChrCustomizationReqID), outfit, true))
             return false;
 
         std::vector<ChrCustomizationChoiceEntry const*> const* choicesForOption = sDB2Manager.GetCustomiztionChoices(playerChoice.ChrCustomizationOptionID);
@@ -523,11 +524,14 @@ void Roleplay::ApplyCustomNpcStateToCreature(Creature* creature, uint32 template
     }
     else
     {
-        creature->SetDisplayId(model.CreatureDisplayID);
+        creature->SetDisplayId(model.CreatureDisplayID, true);
         creature->SetObjectScale(model.DisplayScale);
     }
 
+    creature->LoadEquipment(0);
     creature->LoadEquipment(variation);
+    // The appearance remains assigned even when this model has no equipment row.
+    creature->SetCurrentEquipmentId(variation);
 
     creature->RemoveAllAuras();
     for (uint32 auraId : cAddon.auras)
@@ -562,11 +566,32 @@ void Roleplay::ReloadSpawnedCustomNpcs(std::string const& key, Optional<uint8> v
         if (!creature)
             continue;
 
-        uint8 variation = 1;
-        if (variationId)
-            variation = *variationId;
-        else if (Optional<uint8> resolvedVariation = ResolveCustomNpcSpawnVariation(&cTemplate, creature->GetCreatureData()))
-            variation = *resolvedVariation;
+        uint8 const equippedVariation = creature->GetCurrentEquipmentId();
+        uint8 variation = equippedVariation;
+        uint32 const displayId = creature->GetOutfit() ? creature->GetOutfit()->GetId() : creature->GetNativeDisplayId();
+        bool const editingAssignedVariation = variationId && variation == *variationId;
+        if (!editingAssignedVariation && (!variation || variation > cTemplate.Models.size()
+            || cTemplate.Models[variation - 1].CreatureDisplayID != displayId))
+        {
+            variation = 0;
+            for (size_t index = 0; index < cTemplate.Models.size(); ++index)
+                if (cTemplate.Models[index].CreatureDisplayID == displayId)
+                {
+                    variation = uint8(index + 1);
+                    break;
+                }
+        }
+        // A changed DisplayID is no longer in the template, including for temporary spawns.
+        if (!variation && equippedVariation > 0 && equippedVariation <= cTemplate.Models.size())
+            variation = equippedVariation;
+        if (!variation)
+            if (Optional<uint8> resolvedVariation = ResolveCustomNpcSpawnVariation(&cTemplate, creature->GetCreatureData()))
+                variation = *resolvedVariation;
+
+        // Editing one appearance refreshes only creatures already using it.
+        // Adding an appearance must not turn every existing spawn into the new model.
+        if (variationId && variation != *variationId)
+            continue;
 
         if (variation < 1 || variation > cTemplate.Models.size())
             variation = 1;
@@ -957,12 +982,23 @@ std::vector<ChrCustomizationChoiceEntry const*> Roleplay::BuildCustomizationChoi
     return result;
 }
 
+bool Roleplay::IsCustomizationOptionAvailable(ChrCustomizationOptionEntry const* option, CreatureOutfit const& outfit) const
+{
+    if (!option)
+        return false;
+    ChrCustomizationReqEntry const* req = sChrCustomizationReqStore.LookupEntry(option->ChrCustomizationReqID);
+    return (!option->ChrCustomizationReqID || req) && MeetsCustomizationReqForOutfit(req, outfit, true);
+}
+
 std::vector<ChrCustomizationChoiceEntry const*> Roleplay::BuildCustomizationChoiceListForOutfit(uint32 optionId, CreatureOutfit const& outfit) const
 {
     std::vector<ChrCustomizationChoiceEntry const*> result;
+    if (!IsCustomizationOptionAvailable(sChrCustomizationOptionStore.LookupEntry(optionId), outfit))
+        return result;
     for (ChrCustomizationChoiceEntry const* choice : BuildCustomizationChoiceList(optionId))
     {
-        if (!MeetsCustomizationReqForOutfit(sChrCustomizationReqStore.LookupEntry(choice->ChrCustomizationReqID), outfit, true))
+        ChrCustomizationReqEntry const* req = sChrCustomizationReqStore.LookupEntry(choice->ChrCustomizationReqID);
+        if ((choice->ChrCustomizationReqID && !req) || !MeetsCustomizationReqForOutfit(req, outfit, true))
             continue;
 
         result.push_back(choice);
@@ -1297,6 +1333,12 @@ bool Roleplay::AddCustomNpcModelVariationBlank(std::string const& key, Optional<
     uint32 templateId = itr->second.templateId;
     CreatureTemplate& cTemplate = sObjectMgr->_creatureTemplateStore[templateId];
 
+    if (cTemplate.Models.size() >= 255)
+    {
+        error = "custom NPC already has the maximum of 255 model variations";
+        return false;
+    }
+
     Races race = RACE_HUMAN;
     Gender gender = GENDER_MALE;
     if (sourceVariation && *sourceVariation >= 1 && *sourceVariation <= cTemplate.Models.size())
@@ -1352,6 +1394,14 @@ bool Roleplay::AddCustomNpcModelVariationFromPlayer(std::string const& key, Play
         return false;
     }
 
+    uint32 templateId = itr->second.templateId;
+    CreatureTemplate& cTemplate = sObjectMgr->_creatureTemplateStore[templateId];
+    if (cTemplate.Models.size() >= 255)
+    {
+        error = "custom NPC already has the maximum of 255 model variations";
+        return false;
+    }
+
     std::shared_ptr<CreatureOutfit> co(new CreatureOutfit());
     uint32 outfitId = AllocateNextOutfitId();
     co->id = outfitId;
@@ -1362,8 +1412,6 @@ bool Roleplay::AddCustomNpcModelVariationFromPlayer(std::string const& key, Play
     }
 
     sObjectMgr->_creatureOutfitStore[outfitId] = std::move(co);
-    uint32 templateId = itr->second.templateId;
-    CreatureTemplate& cTemplate = sObjectMgr->_creatureTemplateStore[templateId];
     cTemplate.Models.push_back(CreatureModel(outfitId, source->GetNativeDisplayScale(), 1.0f));
     newVariation = uint8(cTemplate.Models.size());
 
@@ -1395,6 +1443,11 @@ bool Roleplay::AddCustomNpcModelVariationFromCreature(std::string const& key, Cr
 
     uint32 templateId = itr->second.templateId;
     CreatureTemplate& cTemplate = sObjectMgr->_creatureTemplateStore[templateId];
+    if (cTemplate.Models.size() >= 255)
+    {
+        error = "custom NPC already has the maximum of 255 model variations";
+        return false;
+    }
 
     if (std::shared_ptr<CreatureOutfit> const& sourceOutfit = source->GetOutfit())
     {
@@ -1452,7 +1505,19 @@ bool Roleplay::CopyCustomNpcModelVariation(std::string const& key, uint8 fromVar
         return false;
     }
 
-    CreatureModel const& sourceModel = sourceTemplate.Models[fromVariation - 1];
+    if (!toVariation && targetTemplate.Models.size() >= 255)
+    {
+        error = "custom NPC already has the maximum of 255 model variations";
+        return false;
+    }
+
+    // Appending to the same template can reallocate Models and invalidate a reference.
+    CreatureModel const sourceModel = sourceTemplate.Models[fromVariation - 1];
+    if (CreatureOutfit::IsFake(sourceModel.CreatureDisplayID) && !sObjectMgr->GetOutfit(sourceModel.CreatureDisplayID))
+    {
+        error = "source model outfit is not loaded";
+        return false;
+    }
     uint8 targetVariation = toVariation.value_or(uint8(targetTemplate.Models.size() + 1));
 
     if (toVariation)

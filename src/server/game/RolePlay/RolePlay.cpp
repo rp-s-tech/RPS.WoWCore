@@ -1791,6 +1791,16 @@ bool Roleplay::SetCustomNpcCustomizationOption(std::string const& key, uint8 var
     }
 
     ReplaceCustomization(workingCopy.Customizations, optionId, choiceId);
+    // A parent choice can invalidate dependent selections; publish only the normalized copy.
+    NormalizeOutfitCustomizations(workingCopy);
+    if (std::none_of(workingCopy.Customizations.begin(), workingCopy.Customizations.end(), [optionId, choiceId](UF::ChrCustomizationChoice const& customization)
+    {
+        return customization.ChrCustomizationOptionID == optionId && customization.ChrCustomizationChoiceID == choiceId;
+    }))
+    {
+        error = "requested choice does not satisfy current outfit prerequisites";
+        return false;
+    }
     SortCustomizationsByOptions(workingCopy.Customizations, options);
     return ValidateAndSaveCustomNpcOutfit(key, variationId, workingCopy, error);
 }
@@ -1822,20 +1832,33 @@ void Roleplay::SetCustomNpcStandState(std::string const& key, uint8 standState)
 
 void Roleplay::RemoveCustomNpcVariation(std::string const& key, uint8 variationId)
 {
-    uint32 templateId = _customNpcStore[key].templateId;
+    auto const npcItr = _customNpcStore.find(key);
+    if (npcItr == _customNpcStore.end())
+        return;
+    uint32 templateId = npcItr->second.templateId;
     CreatureTemplate& cTemplate = sObjectMgr->_creatureTemplateStore[templateId];
-    uint8 currentModel = variationId;
-    while (currentModel != cTemplate.Models.size()) {
-        // Shift models lower
+    if (variationId <= 1 || variationId > cTemplate.Models.size() || cTemplate.Models.size() > 255)
+        return;
+
+    auto& equipment = sObjectMgr->_equipmentInfoStore[templateId];
+    size_t currentModel = variationId;
+    while (currentModel < cTemplate.Models.size()) {
+        // A model and its matching weapon set must keep the same 1-based variation.
         cTemplate.Models[currentModel - 1] = cTemplate.Models[currentModel];
-        SaveNpcModelInfo(cTemplate.Models[currentModel - 1], templateId, currentModel);
+        auto const source = equipment.find(uint8(currentModel + 1));
+        EquipmentInfo const moved = source != equipment.end() ? source->second : EquipmentInfo{};
+        equipment[uint8(currentModel)] = moved;
+        SaveNpcModelInfo(cTemplate.Models[currentModel - 1], templateId, uint8(currentModel));
+        SaveNpcEquipmentInfoToDb(templateId, uint8(currentModel));
         currentModel++;
     }
 
     WorldDatabasePreparedStatement* stmt = WorldDatabase.GetPreparedStatement(WORLD_DEL_CREATURE_TEMPLATE_MODEL);
     stmt->setUInt32(0, templateId);
-    stmt->setUInt8(1, currentModel - 1);
+    stmt->setUInt8(1, uint8(currentModel - 1));
     WorldDatabase.Execute(stmt);
+    equipment.erase(uint8(currentModel));
+    WorldDatabase.PExecute("DELETE FROM creature_equip_template WHERE CreatureID = {} AND ID = {}", templateId, currentModel);
 
     cTemplate.Models.pop_back();
     ReloadSpawnedCustomNpcs(key);

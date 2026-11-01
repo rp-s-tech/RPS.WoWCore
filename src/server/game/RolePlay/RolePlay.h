@@ -192,6 +192,7 @@ public:
     std::vector<ChrCustomizationOptionEntry const*> BuildCustomizationOptionList(Races race, Gender gender) const;
     std::vector<ChrCustomizationChoiceEntry const*> BuildCustomizationChoiceList(uint32 optionId) const;
     std::vector<ChrCustomizationChoiceEntry const*> BuildCustomizationChoiceListForOutfit(uint32 optionId, CreatureOutfit const& outfit) const;
+    bool IsCustomizationOptionAvailable(ChrCustomizationOptionEntry const* option, CreatureOutfit const& outfit) const;
     uint32 FindCustomizationChoiceIndex(CreatureOutfit const& outfit, ChrCustomizationOptionEntry const* option) const;
     std::string GetCustomizationOptionLabel(ChrCustomizationOptionEntry const* option, LocaleConstant locale) const;
     std::string GetCustomizationChoiceLabel(ChrCustomizationChoiceEntry const* choice, LocaleConstant locale) const;

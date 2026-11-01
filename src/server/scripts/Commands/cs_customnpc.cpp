@@ -15,6 +15,8 @@
 #include "PhasingHandler.h"
 #include "ObjectAccessor.h"
 #include "DB2Structure.h"
+#include <algorithm>
+#include <cmath>
 #include <boost/algorithm/string.hpp>
 #include <sstream>
 
@@ -148,13 +150,14 @@ public:
         return true;
     }
 
-    static bool EnsureCanEditCustomNpc(ChatHandler* handler, std::string const& key)
+    static bool EnsureCanEditCustomNpc(ChatHandler* handler, std::string const& key, bool claimOwner = true)
     {
         Player* player = handler->GetPlayer();
         bool allowAdmin = handler->GetSession() && handler->GetSession()->GetSecurity() >= SEC_ADMINISTRATOR;
         if (sRoleplay->CanEditCustomNpc(key, player, allowAdmin))
         {
-            sRoleplay->EnsureCustomNpcOwner(key, player);
+            if (claimOwner)
+                sRoleplay->EnsureCustomNpcOwner(key, player);
             return true;
         }
 
@@ -235,12 +238,15 @@ public:
             ? sRoleplay->GetEquipmentVariationCountForNpc(name)
             : sRoleplay->GetModelVariationCountForNpc(name);
 
-        if ((modelCount + 1) < variation)
+        uint32 const maximum = equipmentVariation
+            ? std::max(uint32(modelCount) + 1, uint32(sRoleplay->GetModelVariationCountForNpc(name)))
+            : uint32(modelCount) + 1;
+        if (maximum < variation)
         {
             handler->PSendSysMessage(equipmentVariation
                 ? "The highest equipment set variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'."
                 : "The highest model variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'.",
-                name.c_str(), modelCount, modelCount + 1);
+                name.c_str(), modelCount, maximum);
             handler->SetSentErrorMessage(true);
             return false;
         }
@@ -413,13 +419,23 @@ public:
         bool ok;
         if (StringEqualI(arg, "all"))
         {
+            if (!handler->GetSession() || handler->GetSession()->GetSecurity() < SEC_ADMINISTRATOR)
+            {
+                handler->SendSysMessage("Only administrators can reload all custom NPCs.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
             CustomNpcReloadSummary summary = sRoleplay->ReloadAllCustomNpcsFromDb();
             handler->PSendSysMessage("Reloaded %u custom NPC(s), %u failed. See Server.log category 'roleplay' for details.",
                 summary.successCount, summary.failedCount);
             return true;
         }
         else
+        {
+            if (!EnsureCanEditCustomNpc(handler, arg, false))
+                return false;
             ok = sRoleplay->ReloadCustomNpcFromDb(arg);
+        }
 
         if (!ok)
         {
@@ -432,7 +448,7 @@ public:
         return true;
     }
 
-    static bool HandleCustomNpcApplyCommand(ChatHandler* handler, uint8 variation)
+    static bool HandleCustomNpcApplyCommand(ChatHandler* handler, uint8 variation, Optional<std::string> expectedKey = {})
     {
         if (variation < 1)
         {
@@ -458,6 +474,15 @@ public:
             handler->SetSentErrorMessage(true);
             return false;
         }
+
+        if ((expectedKey && *expectedKey != *key) || creature->GetMap() != player->GetMap() || !creature->InSamePhase(player))
+        {
+            handler->SendSysMessage("Select this custom NPC in your current map and phase with .npc select first.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+        if (!EnsureCanEditCustomNpc(handler, *key, false))
+            return false;
 
         uint8 modelCount = sRoleplay->GetModelVariationCountForNpc(*key);
         if (variation > modelCount)
@@ -536,10 +561,6 @@ public:
             return false;
         }
 
-        uint8 variation = creature->GetCurrentEquipmentId();
-        if (!variation)
-            variation = 1;
-
         creature->SaveToDB(map->GetId(), { map->GetDifficultyID() });
         ObjectGuid::LowType db_guid = creature->GetSpawnId();
 
@@ -560,6 +581,7 @@ public:
         sRoleplay->SetCreatureSelectionForPlayer(chr->GetGUID().GetCounter(), creature->GetSpawnId());
 
         sRoleplay->LoadCustomNpcSpawn(id, db_guid);
+        uint8 const variation = creature->GetCurrentEquipmentId();
         handler->PSendSysMessage("Custom NPC %s spawned (variation %u).", name.c_str(), variation);
         return true;
     }
@@ -573,7 +595,12 @@ public:
         }
 
         Player* chr = handler->GetSession()->GetPlayer();
-        chr->SummonCreature(sRoleplay->GetEntryIdForNpc(key), chr->GetPosition(), TEMPSUMMON_CORPSE_DESPAWN, 30s);
+        if (!chr->SummonCreature(sRoleplay->GetEntryIdForNpc(key), chr->GetPosition(), TEMPSUMMON_CORPSE_DESPAWN, 30s))
+        {
+            handler->SendSysMessage("Could not summon the custom NPC. Check its display and model variations.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
         handler->PSendSysMessage("Custom NPC %s temporarily summoned (random variation if multiple exist).", key.c_str());
         return true;
     }
@@ -782,12 +809,8 @@ public:
             variation = 1;
         }
 
-        uint8 modelCount = sRoleplay->GetEquipmentVariationCountForNpc(name);
-        if ((modelCount + 1) < variation) {
-            handler->PSendSysMessage("The highest equipment set variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'.", name.c_str(), modelCount, modelCount + 1);
-            handler->SetSentErrorMessage(true);
+        if (!ValidateCustomNpcVariation(handler, name, variation, true))
             return false;
-        }
 
         if (IsSelfEquipArg(itemArg))
         {
@@ -836,12 +859,8 @@ public:
             variation = 1;
         }
 
-        uint8 modelCount = sRoleplay->GetEquipmentVariationCountForNpc(name);
-        if ((modelCount + 1) < variation) {
-            handler->PSendSysMessage("The highest equipment set variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'.", name.c_str(), modelCount, modelCount + 1);
-            handler->SetSentErrorMessage(true);
+        if (!ValidateCustomNpcVariation(handler, name, variation, true))
             return false;
-        }
 
         if (IsSelfEquipArg(itemArg))
         {
@@ -890,12 +909,8 @@ public:
             variation = 1;
         }
 
-        uint8 modelCount = sRoleplay->GetEquipmentVariationCountForNpc(name);
-        if ((modelCount + 1) < variation) {
-            handler->PSendSysMessage("The highest equipment set variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'.", name.c_str(), modelCount, modelCount + 1);
-            handler->SetSentErrorMessage(true);
+        if (!ValidateCustomNpcVariation(handler, name, variation, true))
             return false;
-        }
 
         if (IsSelfEquipArg(itemArg))
         {
@@ -1128,12 +1143,8 @@ public:
             variation = 1;
         }
 
-        uint8 modelCount = sRoleplay->GetEquipmentVariationCountForNpc(name);
-        if ((modelCount + 1) < variation) {
-            handler->PSendSysMessage("The highest equipment set variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'.", name.c_str(), modelCount, modelCount + 1);
-            handler->SetSentErrorMessage(true);
+        if (!ValidateCustomNpcVariation(handler, name, variation, true))
             return false;
-        }
 
         sRoleplay->SetCustomNpcLeftHand(name, variation, 0, 0);
         handler->PSendSysMessage("Left hand unequipped from custom NPC %s, equipment variation '%u'!", name.c_str(), variation);
@@ -1155,12 +1166,8 @@ public:
             variation = 1;
         }
 
-        uint8 modelCount = sRoleplay->GetEquipmentVariationCountForNpc(name);
-        if ((modelCount + 1) < variation) {
-            handler->PSendSysMessage("The highest equipment set variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'.", name.c_str(), modelCount, modelCount + 1);
-            handler->SetSentErrorMessage(true);
+        if (!ValidateCustomNpcVariation(handler, name, variation, true))
             return false;
-        }
 
         sRoleplay->SetCustomNpcRightHand(name, variation, 0, 0);
         handler->PSendSysMessage("Right hand unequipped from custom NPC %s, equipment variation '%u'!", name.c_str(), variation);
@@ -1182,12 +1189,8 @@ public:
             variation = 1;
         }
 
-        uint8 modelCount = sRoleplay->GetEquipmentVariationCountForNpc(name);
-        if ((modelCount + 1) < variation) {
-            handler->PSendSysMessage("The highest equipment set variation for Custom NPC '%s' is '%u'. The highest variation that can be added at the moment is '%u'.", name.c_str(), modelCount, modelCount + 1);
-            handler->SetSentErrorMessage(true);
+        if (!ValidateCustomNpcVariation(handler, name, variation, true))
             return false;
-        }
 
         sRoleplay->SetCustomNpcRanged(name, variation, 0, 0);
         handler->PSendSysMessage("Ranged weapon unequipped from custom NPC %s, equipment variation '%u'!", name.c_str(), variation);
@@ -1196,6 +1199,12 @@ public:
 
     static bool HandleCustomNpcSetDisplayIdCommand(ChatHandler* handler, std::string const& name, uint32 displayId, Optional<uint8> variationId)
     {
+        if (!sCreatureDisplayInfoStore.LookupEntry(displayId) && !sObjectMgr->GetOutfit(displayId))
+        {
+            handler->SendSysMessage("Unknown creature display ID.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
         if (!sRoleplay->CustomNpcNameExists(name)) {
             handler->PSendSysMessage("There is no Custom NPC with the name: %s", name.c_str());
             handler->SetSentErrorMessage(true);
@@ -1250,6 +1259,12 @@ public:
 
     static bool HandleCustomNpcSetScaleCommand(ChatHandler* handler, std::string const& name, float scale, Optional<uint8> variationId)
     {
+        if (!std::isfinite(scale) || scale <= 0.0f)
+        {
+            handler->SendSysMessage("Scale must be a finite positive number.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
         if (!sRoleplay->CustomNpcNameExists(name)) {
             handler->PSendSysMessage("There is no Custom NPC with the name: %s", name.c_str());
             handler->SetSentErrorMessage(true);
@@ -1476,19 +1491,23 @@ public:
         return true;
     }
 
-    static bool HandleCustomNpcRefreshCommand(ChatHandler* handler, Tail keyOrAll)
+    static bool HandleCustomNpcRefreshCommand(ChatHandler* handler, std::string const& keyOrAll, Optional<uint8> variationId)
     {
-        std::string arg = keyOrAll.data();
-        boost::trim(arg);
-        if (arg.empty())
+        if (variationId && *variationId < 1)
         {
             handler->SendSysMessage("Usage: .cnpc refresh <key|all> [variation]");
             handler->SetSentErrorMessage(true);
             return false;
         }
 
-        if (StringEqualI(arg, "all"))
+        if (StringEqualI(keyOrAll, "all"))
         {
+            if (variationId || !handler->GetSession() || handler->GetSession()->GetSecurity() < SEC_ADMINISTRATOR)
+            {
+                handler->SendSysMessage("Only administrators can refresh all custom NPCs, without a variation number.");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
             CustomNpcDataContainer const customNpcs = sRoleplay->GetCustomNpcContainer();
             uint32 count = 0;
             for (auto const& pair : customNpcs)
@@ -1500,14 +1519,25 @@ public:
             return true;
         }
 
-        if (!sRoleplay->RefreshCustomNpcCreatures(arg))
+        if (!EnsureCanEditCustomNpc(handler, keyOrAll, false))
+            return false;
+        if (variationId && *variationId > sRoleplay->GetModelVariationCountForNpc(keyOrAll))
         {
-            handler->PSendSysMessage("Custom NPC %s was not refreshed.", arg.c_str());
+            handler->SendSysMessage("The selected custom NPC appearance does not exist.");
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+        if (!sRoleplay->RefreshCustomNpcCreatures(keyOrAll, variationId))
+        {
+            handler->PSendSysMessage("Custom NPC %s was not refreshed.", keyOrAll.c_str());
             handler->SetSentErrorMessage(true);
             return false;
         }
 
-        handler->PSendSysMessage("Custom NPC %s refreshed in world.", arg.c_str());
+        if (variationId)
+            handler->PSendSysMessage("Custom NPC %s appearance %u refreshed in world.", keyOrAll.c_str(), *variationId);
+        else
+            handler->PSendSysMessage("Custom NPC %s refreshed in world.", keyOrAll.c_str());
         return true;
     }
 
@@ -1544,7 +1574,7 @@ public:
         }
 
         handler->PSendSysMessage("Model variations for %s (entry %u):", key.c_str(), entry);
-        for (uint8 i = 0; i < cTemplate->Models.size(); ++i)
+        for (size_t i = 0; i < cTemplate->Models.size(); ++i)
         {
             CreatureModel const& model = cTemplate->Models[i];
             handler->PSendSysMessage("%u: displayId=%u scale=%.2f%s", uint32(i + 1), model.CreatureDisplayID, model.DisplayScale,

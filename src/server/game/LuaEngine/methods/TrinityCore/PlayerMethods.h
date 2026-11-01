@@ -3939,10 +3939,11 @@ namespace LuaPlayer
     int RunCommand(Eluna* E, Player* player)
     {
         const char* command = E->CHECKVAL<const char*>(2);
-
-        if (std::string(command).length() > 0)
-            ChatHandler(player->GetSession())._ParseCommands(command);
-        return 0;
+        ChatHandler handler(player->GetSession());
+        bool const handled = *command && handler._ParseCommands(command);
+        // Parsing also handles rejected commands by printing their error/help.
+        E->Push(handled && !handler.HasSentErrorMessage());
+        return 1;
     }
 
     /**
@@ -4176,8 +4177,12 @@ namespace LuaPlayer
         CreatureOutfit const* outfit = isOutfitDisplay ? sRoleplay->GetCustomNpcOutfit(key, variation) : nullptr;
         bool const hasOutfit = outfit != nullptr;
 
-        lua_createtable(E->L, 0, 16);
+        lua_createtable(E->L, 0, 17);
         int row = lua_gettop(E->L);
+
+        E->Push("supportsCommandResult");
+        E->Push(true);
+        lua_rawset(E->L, row);
 
         E->Push("key");
         E->Push(npc.key);
@@ -4239,6 +4244,10 @@ namespace LuaPlayer
 
             E->Push("gender");
             E->Push(uint32(outfit->GetGender()));
+            lua_rawset(E->L, row);
+
+            E->Push("classId");
+            E->Push(uint32(outfit->GetClass()));
             lua_rawset(E->L, row);
 
             E->Push("outfitId");
@@ -4349,8 +4358,16 @@ namespace LuaPlayer
         E->Push(hasOutfit);
         lua_rawset(E->L, row);
 
+        E->Push("supportsChoiceIds");
+        E->Push(true);
+        lua_rawset(E->L, row);
+
         if (hasOutfit)
         {
+            E->Push("classId");
+            E->Push(uint32(outfit->GetClass()));
+            lua_rawset(E->L, row);
+
             auto options = sRoleplay->BuildCustomizationOptionList(Races(outfit->GetRace()), Gender(outfit->GetGender()));
             lua_createtable(E->L, int(options.size()), 0);
             int optTbl = lua_gettop(E->L);
@@ -4387,6 +4404,19 @@ namespace LuaPlayer
 
                 E->Push("choiceCount");
                 E->Push(choiceCount);
+                lua_rawset(E->L, oRow);
+
+                bool const available = sRoleplay->IsCustomizationOptionAvailable(option, *outfit);
+                E->Push("available");
+                E->Push(available);
+                lua_rawset(E->L, oRow);
+
+                E->Push("reason");
+                E->Push(available ? "" : "option_prerequisites");
+                lua_rawset(E->L, oRow);
+
+                E->Push("totalChoiceCount");
+                E->Push(uint32(sRoleplay->BuildCustomizationChoiceList(option->ID).size()));
                 lua_rawset(E->L, oRow);
 
                 E->Push("currentChoiceIndex");
@@ -4427,11 +4457,13 @@ namespace LuaPlayer
      * @return table|nil payload, string|nil err
      *   payload: { key, variation, optionIndex, optionId, name, currentChoiceIndex, choices = [{ index, choiceId, name }] }
      */
-    int GetCustomNpcFaceChoices(Eluna* E, Player* player)
+    int GetCustomNpcFaceChoicesImpl(Eluna* E, Player* player, bool originalIds)
     {
         std::string key = E->CHECKVAL<std::string>(2);
         uint32 optionIndex = E->CHECKVAL<uint32>(3);
         uint8 variation = E->CHECKVAL<uint8>(4, 1);
+        uint32 offset = originalIds ? E->CHECKVAL<uint32>(5, 0) : 0;
+        uint32 limit = originalIds ? std::clamp(E->CHECKVAL<uint32>(6, 100), uint32(1), uint32(200)) : 0;
 
         auto pushError = [E](char const* err) -> int
         {
@@ -4472,12 +4504,27 @@ namespace LuaPlayer
             return pushError("no outfit");
 
         auto options = sRoleplay->BuildCustomizationOptionList(Races(outfit->GetRace()), Gender(outfit->GetGender()));
+        if (originalIds)
+        {
+            auto option = std::find_if(options.begin(), options.end(), [optionIndex](ChrCustomizationOptionEntry const* entry)
+            {
+                return entry->ID == optionIndex;
+            });
+            if (option == options.end())
+                return pushError("option id is not valid for current race/gender");
+            optionIndex = uint32(std::distance(options.begin(), option)) + 1;
+        }
         if (optionIndex > options.size())
             return pushError("option index out of range");
 
         ChrCustomizationOptionEntry const* option = options[optionIndex - 1];
-        auto choices = sRoleplay->BuildCustomizationChoiceListForOutfit(option->ID, *outfit);
+        auto const availableChoices = sRoleplay->BuildCustomizationChoiceListForOutfit(option->ID, *outfit);
+        auto const& choices = availableChoices;
         uint32 const currentChoiceIndex = sRoleplay->FindCustomizationChoiceIndex(*outfit, option);
+        uint32 currentChoiceId = 0;
+        for (UF::ChrCustomizationChoice const& customization : outfit->Customizations)
+            if (customization.ChrCustomizationOptionID == option->ID)
+                currentChoiceId = customization.ChrCustomizationChoiceID;
 
         LocaleConstant locale = DEFAULT_LOCALE;
         if (player->GetSession())
@@ -4510,16 +4557,35 @@ namespace LuaPlayer
         E->Push(currentChoiceIndex);
         lua_rawset(E->L, row);
 
-        lua_createtable(E->L, int(choices.size()), 0);
+        E->Push("currentChoiceId");
+        E->Push(currentChoiceId);
+        lua_rawset(E->L, row);
+
+        E->Push("optionAvailable");
+        E->Push(sRoleplay->IsCustomizationOptionAvailable(option, *outfit));
+        lua_rawset(E->L, row);
+
+        E->Push("supportsChoiceIds");
+        E->Push(originalIds);
+        lua_rawset(E->L, row);
+
+        uint32 const total = uint32(choices.size());
+        uint32 const end = originalIds ? offset + std::min(limit, total - std::min(offset, total)) : total;
+        E->Push("offset"); E->Push(offset); lua_rawset(E->L, row);
+        E->Push("total"); E->Push(total); lua_rawset(E->L, row);
+        E->Push("hasMore"); E->Push(end < total); lua_rawset(E->L, row);
+
+        lua_createtable(E->L, int(end - offset), 0);
         int chTbl = lua_gettop(E->L);
         uint32 ci = 0;
-        for (ChrCustomizationChoiceEntry const* choice : choices)
+        for (uint32 position = offset; position < end; ++position)
         {
+            ChrCustomizationChoiceEntry const* choice = choices[position];
             lua_createtable(E->L, 0, 3);
             int cRow = lua_gettop(E->L);
 
             E->Push("index");
-            E->Push(++ci);
+            E->Push(position + 1);
             lua_rawset(E->L, cRow);
 
             E->Push("choiceId");
@@ -4530,7 +4596,17 @@ namespace LuaPlayer
             E->Push(sRoleplay->GetCustomizationChoiceLabel(choice, locale));
             lua_rawset(E->L, cRow);
 
-            lua_rawseti(E->L, chTbl, ci);
+            E->Push("swatch0"); E->Push(uint32(choice->SwatchColor[0])); lua_rawset(E->L, cRow);
+            E->Push("swatch1"); E->Push(uint32(choice->SwatchColor[1])); lua_rawset(E->L, cRow);
+
+            bool const available = std::any_of(availableChoices.begin(), availableChoices.end(), [choice](ChrCustomizationChoiceEntry const* entry)
+            {
+                return entry->ID == choice->ID;
+            });
+            E->Push("available"); E->Push(available); lua_rawset(E->L, cRow);
+            E->Push("reason"); E->Push(available ? "" : "choice_prerequisites"); lua_rawset(E->L, cRow);
+
+            lua_rawseti(E->L, chTbl, ++ci);
         }
 
         E->Push("choices");
@@ -4540,6 +4616,16 @@ namespace LuaPlayer
 
         lua_settop(E->L, row);
         return 1;
+    }
+
+    int GetCustomNpcFaceChoices(Eluna* E, Player* player)
+    {
+        return GetCustomNpcFaceChoicesImpl(E, player, false);
+    }
+
+    int GetCustomNpcFaceChoicesById(Eluna* E, Player* player)
+    {
+        return GetCustomNpcFaceChoicesImpl(E, player, true);
     }
 
     /**
@@ -4580,6 +4666,8 @@ namespace LuaPlayer
         CreatureTemplate const* cInfo = sObjectMgr->GetCreatureTemplate(npc.templateId);
         if (!cInfo)
             return pushError("template missing");
+        if (cInfo->Models.size() > 255)
+            return pushError("too many model variations");
 
         lua_createtable(E->L, 0, 2);
         int row = lua_gettop(E->L);
@@ -4590,7 +4678,7 @@ namespace LuaPlayer
 
         lua_createtable(E->L, int(cInfo->Models.size()), 0);
         int modelsTbl = lua_gettop(E->L);
-        for (uint8 i = 0; i < cInfo->Models.size(); ++i)
+        for (size_t i = 0; i < cInfo->Models.size(); ++i)
         {
             CreatureModel const& model = cInfo->Models[i];
             lua_createtable(E->L, 0, 4);
@@ -4999,6 +5087,7 @@ namespace LuaPlayer
         { "GetCustomNpcDetail", &LuaPlayer::GetCustomNpcDetail },
         { "GetCustomNpcFaceOptions", &LuaPlayer::GetCustomNpcFaceOptions },
         { "GetCustomNpcFaceChoices", &LuaPlayer::GetCustomNpcFaceChoices },
+        { "GetCustomNpcFaceChoicesById", &LuaPlayer::GetCustomNpcFaceChoicesById },
         { "GetCustomNpcModelList", &LuaPlayer::GetCustomNpcModelList },
         { "GetOwnedGameObjectList", &LuaPlayer::GetOwnedGameObjectList },
 
