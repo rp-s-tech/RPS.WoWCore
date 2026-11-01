@@ -22,6 +22,7 @@
 #include "Errors.h"
 #include "Log.h"
 #include <cstring>
+#include <limits>
 
 static char const* nullStr = "";
 
@@ -277,6 +278,11 @@ void DB2DatabaseLoader::LoadStrings(bool custom, LocaleConstant locale, uint32 r
 char* DB2DatabaseLoader::LoadRecord(uint32 id, std::string_view tableName, char const* oldRecord, std::vector<char*>& stringPool, bool& schemaError)
 {
     schemaError = false;
+    if (id == std::numeric_limits<uint32>::max())
+    {
+        schemaError = true;
+        return nullptr;
+    }
     uint32 dbFieldCount = _loadInfo->Meta->GetDbFieldCount();
     if (_loadInfo->FieldCount != dbFieldCount)
     {
@@ -287,31 +293,52 @@ char* DB2DatabaseLoader::LoadRecord(uint32 id, std::string_view tableName, char 
 
     std::string columns;
     std::string localeColumns;
+    std::string requiredColumns = "'VerifiedBuild'";
+    std::string requiredLocaleColumns = "'ID', 'locale', 'VerifiedBuild'";
+    uint32 localeFieldCount = 0;
     for (uint32 i = 0; i < dbFieldCount; ++i)
     {
         if (!columns.empty())
             columns += ", ";
         columns += Trinity::StringFormat("`{}`", _loadInfo->Fields[i].Name);
+        requiredColumns += Trinity::StringFormat(", '{}'", _loadInfo->Fields[i].Name);
 
         if (_loadInfo->Fields[i].Type == FT_STRING)
+        {
             localeColumns += Trinity::StringFormat(", `{}_lang`", _loadInfo->Fields[i].Name);
+            requiredLocaleColumns += Trinity::StringFormat(", '{}_lang'", _loadInfo->Fields[i].Name);
+            ++localeFieldCount;
+        }
     }
 
-    QueryResult result = HotfixDatabase.Query(Trinity::StringFormat("SELECT {} FROM `{}` WHERE `ID` = {} ORDER BY (`VerifiedBuild` > 0) DESC",
-        columns, tableName, id).c_str());
-    if (!result)
+    // The database driver terminates on unknown tables/columns; reject schema drift before querying them.
+    auto hasColumns = [](std::string_view table, std::string_view names, uint32 count)
     {
-        // Query() also returns nullptr on an SQL error (unknown column, already logged): tell it apart from a missing row
-        schemaError = bool(HotfixDatabase.Query(Trinity::StringFormat("SELECT 1 FROM `{}` WHERE `ID` = {} LIMIT 1", tableName, id).c_str()));
-        return nullptr;
-    }
-
-    if (result->GetFieldCount() != dbFieldCount)
+        QueryResult schema = HotfixDatabase.Query(Trinity::StringFormat(
+            "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+            "AND TABLE_NAME = '{}' AND COLUMN_NAME IN ({})", table, names).c_str());
+        return schema && schema->Fetch()[0].GetUInt64() == count;
+    };
+    if (!hasColumns(tableName, requiredColumns, dbFieldCount + 1)
+        || (localeFieldCount && !hasColumns(std::string(tableName) + "_locale", requiredLocaleColumns, localeFieldCount + 3)))
     {
-        TC_LOG_ERROR("sql.sql", "DB2DatabaseLoader::LoadRecord: table `{}` returned {} columns, storage {} expects {}", tableName, result->GetFieldCount(), _storageName, dbFieldCount);
+        TC_LOG_ERROR("sql.sql", "Item reload: incompatible columns in {} or its locale table", tableName);
         schemaError = true;
         return nullptr;
     }
+
+    // The left join returns a sentinel for an absent row, but nullptr on SQL failure.
+    QueryResult result = HotfixDatabase.Query(Trinity::StringFormat(
+        "SELECT (`ID` IS NOT NULL), {} FROM (SELECT 1) AS sentinel LEFT JOIN `{}` ON `ID` = {} "
+        "ORDER BY (`VerifiedBuild` > 0) DESC", columns, tableName, id).c_str());
+    if (!result || result->GetFieldCount() != dbFieldCount + 1)
+    {
+        schemaError = true;
+        return nullptr;
+    }
+
+    if (!result->Fetch()[0].GetUInt8())
+        return nullptr;
 
     uint32 recordSize = _loadInfo->Meta->GetRecordSize();
 
@@ -327,7 +354,7 @@ char* DB2DatabaseLoader::LoadRecord(uint32 id, std::string_view tableName, char 
 
     do
     {
-        Field* fields = result->Fetch();
+        Field* fields = result->Fetch() + 1;
         uint32 offset = 0;
         localizedOffsets.clear();
 
@@ -409,28 +436,33 @@ char* DB2DatabaseLoader::LoadRecord(uint32 id, std::string_view tableName, char 
     if (localizedOffsets.empty())
         return record;
 
-    QueryResult localeResult = HotfixDatabase.Query(Trinity::StringFormat("SELECT `locale`{} FROM `{}_locale` WHERE `ID` = {} ORDER BY (`VerifiedBuild` > 0) DESC",
-        localeColumns, tableName, id).c_str());
-    if (!localeResult)
-        return record;
-
-    if (localeResult->GetFieldCount() != localizedOffsets.size() + 1 /*locale*/)
+    QueryResult localeResult = HotfixDatabase.Query(Trinity::StringFormat(
+        "SELECT (`ID` IS NOT NULL), `locale`{} FROM (SELECT 1) AS sentinel LEFT JOIN `{}_locale` ON `ID` = {} "
+        "ORDER BY (`VerifiedBuild` > 0) DESC", localeColumns, tableName, id).c_str());
+    if (!localeResult || localeResult->GetFieldCount() != localizedOffsets.size() + 2)
     {
-        TC_LOG_ERROR("sql.sql", "DB2DatabaseLoader::LoadRecord: table `{}_locale` returned {} columns, storage {} expects {}", tableName, localeResult->GetFieldCount(), _storageName, localizedOffsets.size() + 1);
-        return record;
+        schemaError = true;
+        delete[] record;
+        return nullptr;
     }
 
     do
     {
-        Field* fields = localeResult->Fetch();
+        if (!localeResult->Fetch()[0].GetUInt8())
+            continue;
+        Field* fields = localeResult->Fetch() + 1;
         LocaleConstant locale = GetLocaleByName(fields[0].GetStringView());
         if (!IsValidLocale(locale) || locale == LOCALE_enUS)
             continue;
 
-        // Same as LoadStrings(): an empty locale value keeps the previous string
         for (std::size_t i = 0; i < localizedOffsets.size(); ++i)
-            if (char* str = AddString(&((LocalizedString*)(&record[localizedOffsets[i]]))->Str[locale], fields[1 + i].GetStringView()))
+        {
+            char const** slot = &((LocalizedString*)(&record[localizedOffsets[i]]))->Str[locale];
+            if (char* str = AddString(slot, fields[1 + i].GetStringView()))
                 stringPool.push_back(str);
+            else
+                *slot = nullStr;
+        }
     } while (localeResult->NextRow());
 
     return record;

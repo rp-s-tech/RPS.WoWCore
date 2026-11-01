@@ -3474,15 +3474,23 @@ void ObjectMgr::LoadItemScriptNames()
 }
 
 // NobleNext: single-item version of LoadItemTemplates() + LoadItemTemplateAddon() + LoadItemScriptNames(), keep in sync with them
-bool ObjectMgr::LoadItemTemplate(uint32 itemId)
+Optional<ItemTemplate> ObjectMgr::PrepareItemTemplate(uint32 itemId, ItemEntry const* db2Data,
+    ItemSparseEntry const* sparse, std::vector<ItemEffectEntry const*> effects) const
 {
-    ItemEntry const* db2Data = sItemStore.LookupEntry(itemId);
-    ItemSparseEntry const* sparse = sItemSparseStore.LookupEntry(itemId);
     if (!db2Data || !sparse)
-        return false;
+        return {};
 
-    ItemTemplate& itemTemplate = _itemTemplateStore[itemId];
+    QueryResult schema = WorldDatabase.Query("SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND "
+        "((TABLE_NAME = 'item_template_addon' AND COLUMN_NAME IN ('Id', 'FlagsCu', 'FoodType', 'MinMoneyLoot', "
+        "'MaxMoneyLoot', 'ScrappingLootId', 'SpellPPMChance', 'RandomBonusListTemplateId', 'QuestLogItemId')) "
+        "OR (TABLE_NAME = 'item_script_names' AND COLUMN_NAME IN ('Id', 'ScriptName')))");
+    if (!schema || schema->Fetch()[0].GetUInt64() != 11)
+    {
+        TC_LOG_ERROR("sql.sql", "Item reload: incompatible item_template_addon or item_script_names columns");
+        return {};
+    }
 
+    ItemTemplate itemTemplate{};
     itemTemplate.BasicData = db2Data;
     itemTemplate.ExtendedData = sparse;
     itemTemplate.MaxDurability = FillMaxDurability(db2Data->ClassID, db2Data->SubclassID, sparse->InventoryType, sparse->OverallQualityID, sparse->ItemLevel);
@@ -3546,34 +3554,14 @@ bool ObjectMgr::LoadItemTemplate(uint32 itemId)
         if (specs.count() == 0)
             specs.set();
 
-    // Сброс и перезагрузка эффектов предмета
-    itemTemplate.Effects.clear();
-    for (ItemXItemEffectEntry const* effectEntry : sItemXItemEffectStore)
-    {
-        if (effectEntry->ItemID == itemId)
-        {
-            if (ItemEffectEntry const* effect = sItemEffectStore.LookupEntry(effectEntry->ItemEffectID))
-            {
-                auto effectItr = std::ranges::lower_bound(itemTemplate.Effects, effect->LegacySlotIndex, {}, &ItemEffectEntry::LegacySlotIndex);
-                itemTemplate.Effects.insert(effectItr, effect);
-            }
-        }
-    }
-
-    // Сброс дефолтов перед чтением из базы
-    itemTemplate.ScriptId = 0;
-    itemTemplate.FoodType = 0;
-    itemTemplate.MinMoneyLoot = 0;
-    itemTemplate.MaxMoneyLoot = 0;
-    itemTemplate.FlagsCu = 0;
-    itemTemplate.SpellPPMRate = 0.0f;
-    itemTemplate.RandomBonusListTemplateId = 0;
-    itemTemplate.QuestLogItemId = 0;
-    itemTemplate.ScrappingLootId = 0;
+    itemTemplate.Effects = std::move(effects);
+    std::ranges::sort(itemTemplate.Effects, {}, &ItemEffectEntry::LegacySlotIndex);
 
     QueryResult addonResult = WorldDatabase.Query(Trinity::StringFormat(
-        "SELECT Id, FlagsCu, FoodType, MinMoneyLoot, MaxMoneyLoot, ScrappingLootId, SpellPPMChance, RandomBonusListTemplateId, QuestLogItemId FROM item_template_addon WHERE Id = {}", itemId).c_str());
-    if (addonResult)
+        "SELECT Id, FlagsCu, FoodType, MinMoneyLoot, MaxMoneyLoot, ScrappingLootId, SpellPPMChance, RandomBonusListTemplateId, QuestLogItemId FROM (SELECT 1) AS sentinel LEFT JOIN item_template_addon ON Id = {}", itemId).c_str());
+    if (!addonResult)
+        return {};
+    if (addonResult->Fetch()[0].GetUInt32OrNull())
     {
         Field* fields = addonResult->Fetch();
         uint32 minMoneyLoot = fields[3].GetUInt32();
@@ -3594,14 +3582,36 @@ bool ObjectMgr::LoadItemTemplate(uint32 itemId)
     }
 
     QueryResult scriptResult = WorldDatabase.Query(Trinity::StringFormat(
-        "SELECT ScriptName FROM item_script_names WHERE Id = {}", itemId).c_str());
-    if (scriptResult)
+        "SELECT ScriptName FROM (SELECT 1) AS sentinel LEFT JOIN item_script_names ON Id = {}", itemId).c_str());
+    if (!scriptResult)
+        return {};
+    if (scriptResult->Fetch()[0].GetStringOrNull())
     {
-        Field* fields = scriptResult->Fetch();
-        itemTemplate.ScriptId = GetScriptId(fields[0].GetStringView());
+        std::string_view scriptName = scriptResult->Fetch()[0].GetStringView();
+        if (!scriptName.empty())
+        {
+            auto script = _scriptNamesStore.find(scriptName);
+            if (script == _scriptNamesStore.end())
+            {
+                TC_LOG_ERROR("sql.sql", "Item {} reload references unregistered script {}", itemId, scriptName);
+                return {};
+            }
+            itemTemplate.ScriptId = script->second.Id;
+        }
     }
 
-    return true;
+    if (itemTemplate.IsRoleplayOnly())
+    {
+        itemTemplate.MaxDurability = 0;
+        itemTemplate.RandomBonusListTemplateId = 0;
+        itemTemplate.Effects.clear();
+    }
+    return itemTemplate;
+}
+
+void ObjectMgr::PublishItemTemplate(uint32 itemId, ItemTemplate itemTemplate)
+{
+    _itemTemplateStore[itemId] = std::move(itemTemplate);
 }
 
 ItemTemplate const* ObjectMgr::GetItemTemplate(uint32 entry) const

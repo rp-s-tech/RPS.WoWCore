@@ -56,12 +56,20 @@ struct DB2IndexTableSnapshot
     DB2IndexTableSnapshot& operator=(DB2IndexTableSnapshot const&) = delete;
 };
 
-// NobleNext: result of DB2StorageBase::LoadRecordFromDB
+// Result of preparing a single DB2 record for reload.
 enum class DB2RecordLoadResult : uint8
 {
     Loaded,
     NotFound,       // table has no row with this id, record untouched
     SchemaError     // table does not match the storage (see sql.sql log), record untouched
+};
+
+struct DB2RecordUpdate
+{
+    uint32 Id = 0;
+    DB2RecordLoadResult Result = DB2RecordLoadResult::NotFound;
+    std::unique_ptr<char[]> Data;
+    std::vector<std::unique_ptr<char[]>> Strings;
 };
 
 /// Interface class for common access
@@ -100,9 +108,10 @@ public:
     void LoadStringsFrom(std::string const& path, LocaleConstant locale);
     void LoadFromDB();
     void LoadStringsFromDB(LocaleConstant locale);
-    // NobleNext: copy-on-write reload of one record from hotfix db.
-    // Never call while iterating this storage: the commit replaces the snapshot the iterator points into.
-    DB2RecordLoadResult LoadRecordFromDB(uint32 id, std::string_view tableName);
+    // Preparation owns its allocations and does not publish records to readers.
+    DB2RecordUpdate PrepareRecordFromDB(uint32 id, std::string_view tableName) const;
+    void CommitRecord(DB2RecordUpdate update);
+    bool HasNonStringChanges(char const* oldRecord, char const* newRecord) const;
 
 protected:
     /**

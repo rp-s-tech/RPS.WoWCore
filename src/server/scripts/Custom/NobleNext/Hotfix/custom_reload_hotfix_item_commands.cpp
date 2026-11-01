@@ -1,5 +1,5 @@
 /*
- * NobleNext — .reload item <item_id> (live hotfix reload for a single item).
+ * NobleNext: .reload item <item_id> (live hotfix reload for a single item).
  */
 
 #include "Chat.h"
@@ -7,6 +7,7 @@
 #include "DatabaseEnv.h"
 #include "DB2Stores.h"
 #include "HotfixPackets.h"
+#include "Item.h"
 #include "MapUtils.h"
 #include "ObjectAccessor.h"
 #include "ObjectMgr.h"
@@ -19,6 +20,8 @@
 
 #include <fmt/format.h>
 #include <set>
+#include <map>
+#include <tuple>
 #include <shared_mutex>
 #include <vector>
 
@@ -40,118 +43,163 @@ namespace RoleplayCore::NobleNext
             return commandTable;
         }
 
-        static char const* ToString(DB2RecordLoadResult result)
-        {
-            switch (result)
-            {
-                case DB2RecordLoadResult::Loaded:
-                    return "loaded";
-                case DB2RecordLoadResult::NotFound:
-                    return "no_row";
-                case DB2RecordLoadResult::SchemaError:
-                    return "schema_error";
-            }
-            return "unknown";
-        }
-
         static bool HandleReloadItemCommand(ChatHandler* handler, uint32 itemId)
         {
             uint32 t0 = getMSTime();
+            ItemTemplate const* oldTemplate = sObjectMgr->GetItemTemplate(itemId);
+            std::vector<std::pair<DB2StorageBase*, DB2RecordUpdate>> updates;
+            std::vector<std::pair<uint32, int32>> records;
+            std::map<std::pair<uint32, uint32>, char const*> prepared;
+            bool failed = false;
+            bool mechanicsChanged = false;
 
-            uint32 schemaErrors = 0;
-            auto loadRecord = [&schemaErrors](DB2StorageBase& store, uint32 id, std::string_view tableName)
+            auto loadRecord = [&](DB2StorageBase& store, uint32 id, std::string_view table, bool protectMechanics)
             {
-                DB2RecordLoadResult result = store.LoadRecordFromDB(id, tableName);
-                if (result == DB2RecordLoadResult::SchemaError)
-                    ++schemaErrors;
-                return result;
+                auto key = std::pair(store.GetTableHash(), id);
+                if (auto itr = prepared.find(key); itr != prepared.end())
+                    return itr->second;
+                auto snapshot = store.GetSnapshot();
+                char const* oldRecord = snapshot && id < snapshot->TableSize ? snapshot->IndexTable[id] : nullptr;
+                DB2RecordUpdate update = store.PrepareRecordFromDB(id, table);
+                if (update.Result == DB2RecordLoadResult::SchemaError)
+                    failed = true;
+                char const* data = update.Data ? update.Data.get() : oldRecord;
+                if (protectMechanics && oldRecord && store.HasNonStringChanges(oldRecord, data))
+                    mechanicsChanged = true;
+                records.emplace_back(store.GetTableHash(), id);
+                prepared.emplace(key, data);
+                if (update.Result == DB2RecordLoadResult::Loaded)
+                    updates.emplace_back(&store, std::move(update));
+                return data;
             };
 
-            DB2RecordLoadResult item = loadRecord(sItemStore, itemId, "item");
-            DB2RecordLoadResult sparse = loadRecord(sItemSparseStore, itemId, "item_sparse");
-            DB2RecordLoadResult search = loadRecord(sItemSearchNameStore, itemId, "item_search_name");
-            bool exists = sItemStore.HasRecord(itemId) && sItemSparseStore.HasRecord(itemId);
-
-            if (!exists && item != DB2RecordLoadResult::Loaded && sparse != DB2RecordLoadResult::Loaded && search != DB2RecordLoadResult::Loaded)
+            auto collectIds = [&](std::string_view table)
             {
-                if (schemaErrors)
-                    handler->SendSysMessage(fmt::format("Предмет {} не загружен: hotfix-таблицы не совпадают со структурой сервера, подробности в логе sql.sql.", itemId));
+                std::set<uint32> ids;
+                QueryResult schema = HotfixDatabase.Query(Trinity::StringFormat(
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() "
+                    "AND TABLE_NAME = '{}' AND COLUMN_NAME IN ('ID', 'ItemID')", table).c_str());
+                if (!schema || schema->Fetch()[0].GetUInt64() != 2)
+                {
+                    failed = true;
+                    return ids;
+                }
+                QueryResult result = HotfixDatabase.Query(Trinity::StringFormat(
+                    "SELECT ID FROM (SELECT 1) AS sentinel LEFT JOIN `{}` ON ItemID = {}", table, itemId).c_str());
+                if (!result)
+                    failed = true;
                 else
-                    handler->SendSysMessage(fmt::format("Предмет {} не найден в hotfix-таблицах и не загружен в память сервера.", itemId));
+                {
+                    do
+                    {
+                        if (Optional<uint32> id = result->Fetch()[0].GetUInt32OrNull())
+                            ids.insert(*id);
+                    } while (result->NextRow());
+                }
+                return ids;
+            };
+
+            auto basic = reinterpret_cast<ItemEntry const*>(loadRecord(sItemStore, itemId, "item", true));
+            auto sparse = reinterpret_cast<ItemSparseEntry const*>(loadRecord(sItemSparseStore, itemId, "item_sparse", true));
+            loadRecord(sItemSearchNameStore, itemId, "item_search_name", true);
+            if (!basic || !sparse)
+            {
+                handler->SendSysMessage("Предмет не обновлён: отсутствуют данные item или item_sparse. Подробности в sql.sql.");
                 return true;
             }
+            if (oldTemplate && (sItemStore.HasNonStringChanges(reinterpret_cast<char const*>(oldTemplate->BasicData), reinterpret_cast<char const*>(basic))
+                || sItemSparseStore.HasNonStringChanges(reinterpret_cast<char const*>(oldTemplate->ExtendedData), reinterpret_cast<char const*>(sparse))))
+                mechanicsChanged = true;
 
-            // Collect IMA IDs: from hotfix DB and from current memory before reloading
-            std::set<uint32> imaIds;
-            QueryResult imaResult = HotfixDatabase.Query(Trinity::StringFormat("SELECT ID FROM item_modified_appearance WHERE ItemID = {}", itemId).c_str());
-            if (imaResult)
-            {
-                do
-                {
-                    Field* fields = imaResult->Fetch();
-                    imaIds.insert(fields[0].GetUInt32());
-                } while (imaResult->NextRow());
-            }
-
+            std::set<uint32> imaIds = collectIds("item_modified_appearance");
             for (ItemModifiedAppearanceEntry const* ima : sItemModifiedAppearanceStore)
-            {
                 if (ima->ItemID == itemId)
                     imaIds.insert(ima->ID);
-            }
-
-            uint32 loadedImaCount = 0;
-            for (uint32 id : imaIds)
-            {
-                if (loadRecord(sItemModifiedAppearanceStore, id, "item_modified_appearance") == DB2RecordLoadResult::Loaded)
-                    ++loadedImaCount;
-            }
-
-            // Collect ItemAppearance IDs from reloaded IMAs
             std::set<uint32> iaIds;
             for (uint32 id : imaIds)
             {
-                if (ItemModifiedAppearanceEntry const* e = sItemModifiedAppearanceStore.LookupEntry(id))
-                    if (e->ItemID == itemId)
-                        iaIds.insert(e->ItemAppearanceID);
+                auto ima = reinterpret_cast<ItemModifiedAppearanceEntry const*>(loadRecord(sItemModifiedAppearanceStore, id, "item_modified_appearance", false));
+                // Moving a mapping would leave the previous item's transmog index stale.
+                ItemModifiedAppearanceEntry const* oldIma = sItemModifiedAppearanceStore.LookupEntry(id);
+                if (!ima || ima->ItemID != itemId || (oldIma && oldIma->ItemID != itemId))
+                    mechanicsChanged = true;
+                else
+                    iaIds.insert(ima->ItemAppearanceID);
             }
-
-            uint32 loadedIaCount = 0;
             for (uint32 id : iaIds)
+                if (!loadRecord(sItemAppearanceStore, id, "item_appearance", false))
+                    failed = true;
+
+            std::set<uint32> linkIds = collectIds("item_x_item_effect");
+            for (ItemXItemEffectEntry const* link : sItemXItemEffectStore)
+                if (link->ItemID == itemId)
+                    linkIds.insert(link->ID);
+            std::vector<ItemEffectEntry const*> effects;
+            for (uint32 id : linkIds)
             {
-                if (loadRecord(sItemAppearanceStore, id, "item_appearance") == DB2RecordLoadResult::Loaded)
-                    ++loadedIaCount;
+                auto link = reinterpret_cast<ItemXItemEffectEntry const*>(loadRecord(sItemXItemEffectStore, id, "item_x_item_effect", true));
+                if (!link || link->ItemID != itemId)
+                {
+                    failed = true;
+                    continue;
+                }
+                auto effect = reinterpret_cast<ItemEffectEntry const*>(loadRecord(sItemEffectStore, link->ItemEffectID, "item_effect", true));
+                if (!effect)
+                    failed = true;
+                else
+                    effects.push_back(effect);
             }
 
-            // Build records list for push reload
-            std::vector<std::pair<uint32, int32>> records;
-            records.reserve(3 + imaIds.size() + iaIds.size());
-            records.emplace_back(sItemStore.GetTableHash(), itemId);
-            records.emplace_back(sItemSparseStore.GetTableHash(), itemId);
-            records.emplace_back(sItemSearchNameStore.GetTableHash(), itemId);
-            for (uint32 id : imaIds)
-                records.emplace_back(sItemModifiedAppearanceStore.GetTableHash(), id);
-            for (uint32 id : iaIds)
-                records.emplace_back(sItemAppearanceStore.GetTableHash(), id);
+            Optional<ItemTemplate> itemTemplate = sObjectMgr->PrepareItemTemplate(itemId, basic, sparse, std::move(effects));
+            if (failed || !itemTemplate || itemTemplate->Effects.size() > BonusData{}.Effects.size())
+            {
+                handler->SendSysMessage("Предмет не обновлён: ошибка БД или отсутствует связанная запись. Память не изменена; подробности в sql.sql.");
+                return true;
+            }
+            if (oldTemplate)
+            {
+                auto addonState = [](ItemTemplate const& item)
+                {
+                    return std::tuple(item.FlagsCu, item.MaxDurability, item.ScriptId, item.FoodType,
+                        item.MinMoneyLoot, item.MaxMoneyLoot, item.ScrappingLootId, item.SpellPPMRate,
+                        item.RandomBonusListTemplateId, item.QuestLogItemId);
+                };
+                if (addonState(*oldTemplate) != addonState(*itemTemplate) || oldTemplate->Effects.size() != itemTemplate->Effects.size())
+                    mechanicsChanged = true;
+                else
+                    for (std::size_t i = 0; i < oldTemplate->Effects.size(); ++i)
+                        if (sItemEffectStore.HasNonStringChanges(reinterpret_cast<char const*>(oldTemplate->Effects[i]),
+                            reinterpret_cast<char const*>(itemTemplate->Effects[i])))
+                            mechanicsChanged = true;
+            }
+            if (mechanicsChanged)
+            {
+                handler->SendSysMessage("Предмет не обновлён: изменена механика существующей вещи или общего эффекта. Требуется перезапуск сервера; память не изменена.");
+                return true;
+            }
 
             uint32 localeMask = sWorld->GetAvailableDbcLocaleMask();
-            std::vector<int32> reloadedPushIds = sDB2Manager.ReloadHotfixRecords(records, localeMask);
-
-            // A RecordRemoved hotfix may have just erased the item. Its template stays: Item::GetTemplate() of live items must not start returning nullptr
-            bool removed = exists && !(sItemStore.HasRecord(itemId) && sItemSparseStore.HasRecord(itemId));
-
-            bool tmpl = false;
-            if (exists && !removed)
-                tmpl = sObjectMgr->LoadItemTemplate(itemId);
-
+            Optional<std::vector<int32>> reloaded = sDB2Manager.ReloadHotfixRecords(records, localeMask);
+            if (!reloaded)
+            {
+                handler->SendSysMessage("Предмет не обновлён: ошибка чтения хотфиксов, удаление или недопустимый статус записи. Память не изменена; подробности в sql.sql.");
+                return true;
+            }
+            // The command and hotfix requests run on WORLD. All reads have succeeded;
+            // publish before returning to the session loop or sending notifications.
+            for (auto& [store, update] : updates)
+                store->CommitRecord(std::move(update));
+            sObjectMgr->PublishItemTemplate(itemId, std::move(*itemTemplate));
             std::vector<uint32> explicitIma(imaIds.begin(), imaIds.end());
             TransmogMgr::ReloadItemModifiedAppearances(itemId, &explicitIma);
+            std::vector<int32> const& reloadedPushIds = *reloaded;
 
             // Send ONLY the reloaded push IDs to online players instead of the full hotfix list
             // to avoid client-side freezes
             uint32 sessions = 0;
             if (!reloadedPushIds.empty())
             {
-                // Предварительно строим пакеты под каждую локаль вне лока игроков
+                // Build locale packets before locking the player map.
                 std::unordered_map<LocaleConstant, WorldPacket> localePackets;
                 for (uint8 loc = 0; loc < TOTAL_LOCALES; ++loc)
                 {
@@ -200,20 +248,13 @@ namespace RoleplayCore::NobleNext
             }
 
             uint32 diff = GetMSTimeDiffToNow(t0);
-            TC_LOG_INFO("misc", "Item {} reloaded: item={} sparse={} search={} ima={}/{} ia={}/{} pushes={} template={} sessions={} in {} ms",
-                itemId, ToString(item), ToString(sparse), ToString(search), loadedImaCount, imaIds.size(), loadedIaCount, iaIds.size(), reloadedPushIds.size(), tmpl, sessions, diff);
-
-            handler->SendSysMessage(fmt::format("Item {}: item={} sparse={} search={} ima={}/{} ia={}/{} pushes={} template={} sessions={} ({} ms)",
-                itemId, ToString(item), ToString(sparse), ToString(search), loadedImaCount, imaIds.size(), loadedIaCount, iaIds.size(), reloadedPushIds.size(), tmpl, sessions, diff));
-
-            if (schemaErrors)
-                handler->SendSysMessage(fmt::format("Внимание: {} hotfix-записей не загружено из-за несовпадения структуры таблиц, подробности в логе sql.sql.", schemaErrors));
-
-            if (removed)
-                handler->SendSysMessage(fmt::format("Предмет {} удалён хотфиксом (RecordRemoved). Старый шаблон оставлен в памяти до перезапуска сервера.", itemId));
+            TC_LOG_INFO("misc", "Item {} reloaded: records={} pushes={} sessions={} in {} ms",
+                itemId, records.size(), reloadedPushIds.size(), sessions, diff);
+            handler->SendSysMessage(fmt::format("Item {}: records={} pushes={} sessions={} ({} ms)",
+                itemId, records.size(), reloadedPushIds.size(), sessions, diff));
 
             if (reloadedPushIds.empty())
-                handler->SendSysMessage("Примечание: в hotfix_data нет строк для этого предмета, онлайн-клиенты с закэшированным предметом не получат обновление до перезапуска или сброса кэша.");
+                handler->SendSysMessage("В hotfix_data нет записей для предмета. Клиенты могут сохранить прежние данные в кеше.");
 
             return true;
         }
