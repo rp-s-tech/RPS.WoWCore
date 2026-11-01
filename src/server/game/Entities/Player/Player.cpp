@@ -3088,7 +3088,7 @@ bool Player::AddSpell(uint32 spellId, bool active, bool learning, bool dependent
     {
         if (!itr2->second.AutoLearned)
         {
-            if (!IsInWorld() || !itr2->second.Active)       // at spells loading, no output, but allow save
+            if (!IsInWorld() || !itr2->second.Active || m_silentSpellLearning) // at spells loading, no output, but allow save
                 AddSpell(itr2->second.Spell, itr2->second.Active, true, true, false);
             else                                            // at normal learning
                 LearnSpell(itr2->second.Spell, true);
@@ -3098,7 +3098,7 @@ bool Player::AddSpell(uint32 spellId, bool active, bool learning, bool dependent
             AddOverrideSpell(itr2->second.OverridesSpell, itr2->second.Spell);
     }
 
-    if (!GetSession()->PlayerLoading())
+    if (!GetSession()->PlayerLoading() && !m_silentSpellLearning)
     {
         // not ranked skills
         for (SkillLineAbilityMap::const_iterator _spell_idx = skill_bounds.first; _spell_idx != skill_bounds.second; ++_spell_idx)
@@ -3112,7 +3112,7 @@ bool Player::AddSpell(uint32 spellId, bool active, bool learning, bool dependent
 
     // needs to be when spell is already learned, to prevent infinite recursion crashes
     if (sDB2Manager.GetMount(spellId))
-        GetSession()->GetCollectionMgr()->AddMount(spellId, MOUNT_STATUS_NONE, false, IsInWorld() ? false : true);
+        GetSession()->GetCollectionMgr()->AddMount(spellId, MOUNT_STATUS_NONE, false, !IsInWorld() || m_silentSpellLearning);
 
     // return true (for send learn packet) only if spell active (in case ranked spells) and not replace old spell
     return active && !disabled && !superceded_old;
@@ -3218,6 +3218,50 @@ void Player::LearnSpell(uint32 spell_id, bool dependent, int32 fromSkill /*= 0*/
     }
     else
         UpdateQuestObjectiveProgress(QUEST_OBJECTIVE_LEARNSPELL, spell_id, 1);
+}
+
+uint32 Player::LearnSpellsSilently(std::vector<uint32> const& spellIds)
+{
+    WorldPackets::Spells::LearnedSpells learnedSpells;
+    learnedSpells.SuppressMessaging = true;
+    bool mountsChanged = false;
+
+    m_silentSpellLearning = true;
+    for (uint32 spellId : spellIds)
+    {
+        if (HasSpell(spellId))
+            continue;
+
+        PlayerSpellMap::iterator itr = m_spells.find(spellId);
+        bool disabled = itr != m_spells.end() && itr->second.disabled;
+        bool active = disabled ? itr->second.active : true;
+        bool favorite = itr != m_spells.end() && itr->second.favorite;
+
+        if (!AddSpell(spellId, active, true, false, false, false, 0, favorite))
+            continue;
+
+        learnedSpells.ClientLearnedSpellData.emplace_back().SpellID = spellId;
+        learnedSpells.ClientLearnedSpellData.back().Favorite = favorite;
+        if (sDB2Manager.GetMount(spellId))
+            mountsChanged = true;
+    }
+    m_silentSpellLearning = false;
+
+    if (!IsInWorld())
+        return uint32(learnedSpells.ClientLearnedSpellData.size());
+
+    if (!learnedSpells.ClientLearnedSpellData.empty())
+        SendDirectMessage(learnedSpells.Write());
+
+    if (mountsChanged)
+    {
+        WorldPackets::Misc::AccountMountUpdate mountUpdate;
+        mountUpdate.IsFullUpdate = true;
+        mountUpdate.Mounts = &GetSession()->GetCollectionMgr()->GetAccountMounts();
+        SendDirectMessage(mountUpdate.Write());
+    }
+
+    return uint32(learnedSpells.ClientLearnedSpellData.size());
 }
 
 void Player::RemoveSpell(uint32 spell_id, bool disabled /*= false*/, bool learn_low_rank /*= true*/, bool suppressMessaging /*= false*/)
@@ -3955,7 +3999,7 @@ void Player::DeleteFromDB(ObjectGuid playerguid, uint32 accountId, bool updateRe
                     do
                     {
                         Field* fields = resultItems->Fetch();
-                        uint64 mailId = fields[54].GetUInt64();
+                        uint64 mailId = fields[55].GetUInt64();
                         if (Item* mailItem = _LoadMailedItem(playerguid, nullptr, mailId, nullptr, fields, Trinity::Containers::MapGetValuePtr(additionalData, fields[0].GetUInt64())))
                             itemsByMail[mailId].push_back(mailItem);
 
@@ -8401,7 +8445,8 @@ void Player::_ApplyItemMods(Item* item, uint8 slot, bool apply, bool updateItemA
 void Player::_ApplyItemBonuses(Item* item, uint8 slot, bool apply)
 {
     ItemTemplate const* proto = item->GetTemplate();
-    if (slot >= REAGENT_BAG_SLOT_END || !proto)
+    // RPS: every native stat/armor/weapon-damage path of equipped items passes through here.
+    if (slot >= REAGENT_BAG_SLOT_END || !proto || proto->IsRoleplayOnly())
         return;
 
     uint32 itemLevel = item->GetItemLevel(this);
@@ -14511,6 +14556,12 @@ void Player::ApplyEnchantment(Item* item, EnchantmentSlot slot, bool apply, bool
             uint32 enchant_display_type = pEnchant->Effect[s];
             int32 enchant_amount = pEnchant->EffectPointsMin[s];
             uint32 enchant_spell_id = pEnchant->EffectArg[s];
+
+            // RPS: RP-only carriers keep enchant names/visuals/procs, but never native stats from enchants or gems.
+            if (item->GetTemplate()->IsRoleplayOnly() && (enchant_display_type == ITEM_ENCHANTMENT_TYPE_DAMAGE
+                || enchant_display_type == ITEM_ENCHANTMENT_TYPE_RESISTANCE || enchant_display_type == ITEM_ENCHANTMENT_TYPE_STAT
+                || enchant_display_type == ITEM_ENCHANTMENT_TYPE_TOTEM))
+                continue;
 
             switch (enchant_display_type)
             {
@@ -20885,7 +20936,8 @@ Item* Player::_LoadMailedItem(ObjectGuid const& playerGuid, Player* player, uint
 
     Item* item = NewItemOrBag(proto);
 
-    ObjectGuid ownerGuid = fields[54].GetUInt64() ? ObjectGuid::Create<HighGuid::Player>(fields[52].GetUInt64()) : ObjectGuid::Empty;
+    // RPS: SelectItemInstanceContent has 54 columns, then owner_guid (54) and mail id (55).
+    ObjectGuid ownerGuid = fields[54].GetUInt64() ? ObjectGuid::Create<HighGuid::Player>(fields[54].GetUInt64()) : ObjectGuid::Empty;
     if (!item->LoadFromDB(itemGuid, ownerGuid, fields, itemEntry))
     {
         TC_LOG_ERROR("entities.player", "Player::_LoadMailedItems: Item (GUID: {}) in mail ({}) doesn't exist, deleted from mail.", itemGuid, mailId);
@@ -20962,7 +21014,7 @@ void Player::_LoadMail(PreparedQueryResult mailsResult, PreparedQueryResult mail
         do
         {
             Field* fields = mailItemsResult->Fetch();
-            uint64 mailId = fields[53].GetUInt64();
+            uint64 mailId = fields[55].GetUInt64();
             _LoadMailedItem(GetGUID(), this, mailId, mailById[mailId], fields, Trinity::Containers::MapGetValuePtr(additionalData, fields[0].GetUInt64()));
         } while (mailItemsResult->NextRow());
     }
@@ -25611,7 +25663,7 @@ bool Player::BuyItemFromVendorSlot(ObjectGuid vendorguid, uint32 vendorslot, uin
         return false;
     }
 
-    uint64 basePrice = pProto->GetBuyPrice();
+    uint64 basePrice = crItem->GetBuyPrice(pProto);
     if (crItem->ExtendedCost)
     {
         // Can only buy full stacks for extended cost
