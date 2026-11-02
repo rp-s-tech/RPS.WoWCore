@@ -24,6 +24,7 @@ void AddSC_NobleNextBattleCommands();
 void AddSC_NobleNextBattleScripts();
 void AddSC_NobleNextRoleStatCommands();
 void AddSC_NobleNextReloadHotfixItemCommands();
+void AddSC_NobleNextPersistenceCommands();
 
 void AddSC_NobleNextScripts()
 {
@@ -49,4 +50,5 @@ void AddSC_NobleNextScripts()
     AddSC_NobleNextBattleScripts();
     AddSC_NobleNextRoleStatCommands();
     AddSC_NobleNextReloadHotfixItemCommands();
+    AddSC_NobleNextPersistenceCommands();
 }
