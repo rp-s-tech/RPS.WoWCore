@@ -88,7 +88,7 @@ conf:
 	@$(PS) dev\scripts\gen-conf.ps1 -BinDir "$(BIN_DIR)" -DbHost $(DB_HOST) -DbPort $(DB_PORT) \
 		-DbUser $(DB_USER) -Prefix $(DB_PREFIX) -DataDir "$(DATA_DIR)" -SourceDir "$(CURDIR)" \
 		-MySqlExe "$(MYSQL_DIR)/bin/mysql.exe" -UpdatesMask $(UPDATES_MASK) -RealmId $(REALM_ID) \
-		$(if $(FORCE),-Force)
+		$(if $(CONF_EXTRA),-Extra "$(CONF_EXTRA)") $(if $(FORCE),-Force)
 
 lua:
 	@$(PS) dev\scripts\lua-link.ps1 -BinDir "$(BIN_DIR)" -LuaSrc "$(LUA_SRC)"
