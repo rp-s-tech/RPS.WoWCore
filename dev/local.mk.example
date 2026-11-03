@@ -39,6 +39,9 @@ UPDATES_MASK = 0
 REALM_ID   = 2
 REALM_NAME = NobleNext Local
 
+# Extra worldserver.conf keys, applied by `make conf FORCE=1`: Key=Value;Key2=Value2
+# CONF_EXTRA = SOAP.Enabled=1
+
 # Runtime
 DATA_DIR   = C:/wow-data
 LUA_SRC    = C:/NobleNextLua

@@ -4,6 +4,7 @@
 param(
     [string]$BinDir, [string]$DbHost, [int]$DbPort, [string]$DbUser, [string]$Prefix,
     [string]$DataDir, [string]$SourceDir, [string]$MySqlExe, [int]$UpdatesMask, [int]$RealmId,
+    [string]$Extra,   # extra worldserver.conf keys from CONF_EXTRA: "Key=Value;Key2=Value2"
     [switch]$Force
 )
 $ErrorActionPreference = 'Stop'
@@ -39,6 +40,11 @@ $sets = @{
         'Updates.AutoSetup'       = '0'
     }
     'profanity_filters.conf' = [ordered]@{}
+}
+foreach ($pair in ($Extra -split ';' | Where-Object { $_.Trim() })) {
+    $key, $value = $pair -split '=', 2
+    if ($null -eq $value) { throw "CONF_EXTRA: '$pair' is not Key=Value" }
+    $sets['worldserver.conf'][$key.Trim()] = $value.Trim()
 }
 
 foreach ($name in $sets.Keys) {
