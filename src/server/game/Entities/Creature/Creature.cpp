@@ -1379,7 +1379,7 @@ bool Creature::Create(ObjectGuid::LowType guidlow, Map* map, InitialPhaseShift c
 
     if (extraData && extraData->displayLock)
     {
-        SetDisplayId(extraData->displayId);
+        SetDisplayId(extraData->displayId, true);
     }
 
     if (extraData && extraData->genderLock)

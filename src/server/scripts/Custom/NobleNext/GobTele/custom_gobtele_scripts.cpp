@@ -5,6 +5,7 @@
 #include "noble_next_gobtele_handler.h"
 
 #include "GameObject.h"
+#include "GameObjectAI.h"
 #include "Player.h"
 #include "ScriptMgr.h"
 
@@ -15,7 +16,14 @@ namespace RoleplayCore::NobleNext
     public:
         script_noble_next_gobtele() : GameObjectScript("script_noble_next_gobtele") { }
 
-        GameObjectAI* GetAI(GameObject* /*go*/) const override { return nullptr; }
+        struct TeleportAI : GameObjectAI
+        {
+            explicit TeleportAI(GameObject* go) : GameObjectAI(go) { }
+            bool OnGossipHello(Player* player) override
+            { return GobTeleHandler::Instance().TryTeleport(player, me->GetSpawnId()); }
+        };
+
+        GameObjectAI* GetAI(GameObject* go) const override { return new TeleportAI(go); }
 
         bool OnGossipHello(Player* player, GameObject* go) override
         {
@@ -38,6 +46,7 @@ namespace RoleplayCore::NobleNext
         {
             GobTeleHandler::Instance().LoadGossipEntries();
         }
+        void OnUpdate(uint32 /*diff*/) override { GobTeleHandler::Instance().Update(); }
     };
 }
 

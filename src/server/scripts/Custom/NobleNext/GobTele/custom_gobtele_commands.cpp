@@ -53,7 +53,7 @@ namespace RoleplayCore::NobleNext
 
             if (!GobTeleHandler::Instance().SetTeleportDestination(player, goGuidLow))
             {
-                handler->SendSysMessage("Ошибка — неверно введён GUID объекта.");
+                handler->SetSentErrorMessage(true);
                 return false;
             }
             return true;

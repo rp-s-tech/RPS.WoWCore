@@ -13,6 +13,11 @@
 #include "Player.h"
 #include "RBAC.h"
 #include "SharedDefines.h"
+#include "Map.h"
+#include "MotionMaster.h"
+#include "RoleplayCommandPhaseGuard.h"
+#include "RoleplayPhaseMgr.h"
+#include "noble_next_waypoints_service.h"
 
 #include <fmt/format.h>
 
@@ -48,6 +53,7 @@ namespace RoleplayCore::NobleNext
                 { "speech",  sayTable },
                 { "weapon",  HandleWeapon,  LANG_COMMAND_WEAPON_HELP,  rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
                 { "npcsave", HandleNpcSave, LANG_COMMAND_NPCSAVE_HELP, rbac::RBAC_PERM_COMMAND_GM_INGAME, Console::No },
+                { "release", HandleRelease, rbac::RBAC_PERM_COMMAND_UNPOSSESS, Console::No },
             };
 
             static ChatCommandTable commandTable =
@@ -129,6 +135,33 @@ namespace RoleplayCore::NobleNext
 
             creature->SetSheath(static_cast<SheathState>(next));
             handler->SendSysMessage(fmt::format("Оружие NPC: режим {}.", uint32(next)));
+            return true;
+        }
+
+        static bool HandleRelease(ChatHandler* handler)
+        {
+            Player* player = handler->GetPlayer();
+            Unit* controlled = player ? player->GetCharmed() : nullptr;
+            Creature* creature = controlled ? controlled->ToCreature() : nullptr;
+            if (!creature || creature->IsPet() || !creature->HasUnitState(UNIT_STATE_POSSESSED)
+                || creature->GetCharmerGUID() != player->GetGUID())
+            {
+                handler->SendSysMessage("Вы сейчас не управляете НИП.");
+                return false;
+            }
+            if (creature->GetSpawnId() && !RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(player, handler,
+                RoleplayPhaseSpawnType::Creature, creature->GetSpawnId(), false, "npc_release")) return false;
+            if (!WaypointsService::Instance().StopRoute(creature)) return false;
+            // Change only the controlled creature's runtime home; permanent relocation remains explicit.
+            Position position = creature->GetPosition();
+            creature->SetHomePosition(position);
+            creature->SetDefaultMovementType(IDLE_MOTION_TYPE);
+            creature->RemoveCharmAuras();
+            creature->LastCharmerGUID.Clear();
+            creature->StopMoving();
+            creature->GetMotionMaster()->Clear();
+            creature->GetMotionMaster()->MoveIdle();
+            handler->SendSysMessage("НИП отпущен на текущем месте. Для постоянного переноса используйте «Перенести спавн НИП».");
             return true;
         }
 

@@ -198,6 +198,11 @@ class gobject_commandscript : public CommandScript
         PrintGameObjectSpawnDetail(handler, player, guidLow, data->id,
             data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY(), data->spawnPoint.GetPositionZ(),
             data->spawnPoint.GetOrientation(), data->mapId, data->phaseId, data->phaseGroup);
+        std::string deleteError;
+        if (!NobleNext_CanGameObjectBeDeleted(guidLow, deleteError))
+            handler->PSendSysMessage("Удаление ограничено: {}", deleteError);
+        else
+            handler->SendSysMessage("Это серверный GO. Удаление возможно при наличии прав в его RP-фазе. Декорации карты/WMO этой командой не удаляются.");
         return true;
     }
 

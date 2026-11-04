@@ -8,6 +8,11 @@
 #include "Creature.h"
 #include "DatabaseEnv.h"
 #include "GridNotifiers.h"
+#include "Map.h"
+#include "ObjectAccessor.h"
+#include "ObjectMgr.h"
+#include "RoleplayCommandPhaseGuard.h"
+#include "RoleplayPhaseMgr.h"
 #include "Player.h"
 #include "SharedDefines.h"
 #include "Unit.h"
@@ -16,6 +21,10 @@
 
 namespace RoleplayCore::NobleNext
 {
+    namespace
+    {
+        AsyncCallbackProcessor<TransactionCallback> Commits;
+    }
     NpcPoseService& NpcPoseService::Instance()
     {
         static NpcPoseService instance;
@@ -52,7 +61,7 @@ namespace RoleplayCore::NobleNext
             return;
 
         creature->SetEmoteState(static_cast<Emote>(pose.Animation));
-        creature->SetObjectScale(pose.Size);
+        // Size belongs to creature.size; replaying a pose must not undo .npc set scale.
 
         if (pose.Mount)
             creature->Mount(pose.Mount);
@@ -63,36 +72,54 @@ namespace RoleplayCore::NobleNext
         creature->SetSheath(static_cast<SheathState>(pose.Byte2));
     }
 
-    void NpcPoseService::ApplyIfSaved(Creature* creature) const
+    void NpcPoseService::Update(uint32 /*diff*/)
     {
-        if (!creature || !creature->GetSpawnId())
-            return;
-
-        auto itr = _poses.find(creature->GetSpawnId());
-        if (itr == _poses.end())
-            return;
-
-        ApplyPose(creature, itr->second);
+        Commits.ProcessReadyCallbacks();
     }
 
-    void NpcPoseService::ApplyNearby(Player* player, float range) const
+    void NpcPoseService::ForgetMap(Map* map)
     {
-        if (!player || _poses.empty())
-            return;
+        std::lock_guard lock(_mutex);
+        _applied.erase(map->GetId());
+        _timers.erase(map->GetId());
+    }
 
-        std::list<Creature*> creatures;
-        Trinity::AllCreaturesInRange check(player, range);
-        Trinity::CreatureListSearcher<Trinity::AllCreaturesInRange> searcher(player, creatures, check);
-        Cell::VisitGridObjects(player, searcher, range);
-
-        for (Creature* creature : creatures)
-            ApplyIfSaved(creature);
+    void NpcPoseService::UpdateMap(Map* map, uint32 diff)
+    {
+        std::lock_guard lock(_mutex);
+        uint32& timer = _timers[map->GetId()];
+        if (timer > diff) { timer -= diff; return; }
+        timer = 1000;
+        auto& applied = _applied[map->GetId()];
+        for (auto const& [spawn, pose] : _poses)
+        {
+            CreatureData const* data = sObjectMgr->GetCreatureData(spawn);
+            if (!data || data->mapId != map->GetId() || data->id != pose.Entry) continue;
+            Creature* creature = map->GetCreatureBySpawnId(spawn);
+            if (!creature || !creature->IsAlive()) { applied.erase(spawn); continue; }
+            if (creature->IsInCombat() || creature->IsCharmed() || _pending.contains(spawn)) continue;
+            if (applied[spawn] == creature->GetGUID()) continue;
+            ApplyPose(creature, pose);
+            applied[spawn] = creature->GetGUID();
+        }
     }
 
     bool NpcPoseService::SaveCreaturePose(Creature* creature, Player* saver, ChatHandler* handler)
     {
-        if (!creature || !saver || !creature->GetSpawnId())
+        if (!creature || !saver || !creature->GetSpawnId() || creature->IsPet()
+            || !creature->GetMap()->IsWorldMap() || creature->GetInstanceId())
+        {
+            if (handler) handler->SendSysMessage("Выберите постоянного НИП на общей карте; временного сначала запеките.");
             return false;
+        }
+        if (!RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(saver, handler,
+            RoleplayPhaseSpawnType::Creature, creature->GetSpawnId(), false, "npc_pose_save")) return false;
+        std::lock_guard lock(_mutex);
+        if (!_pending.insert(creature->GetSpawnId()).second)
+        {
+            if (handler) handler->SendSysMessage("Дождитесь завершения сохранения позы этого НИП.");
+            return false;
+        }
 
         SavedNpcPose pose;
         pose.Entry = creature->GetEntry();
@@ -103,17 +130,42 @@ namespace RoleplayCore::NobleNext
         pose.Byte1 = static_cast<uint8>(creature->GetStandState());
         pose.Byte2 = static_cast<uint8>(creature->GetSheath());
 
-        _poses[pose.SpawnId] = pose;
-        ApplyPose(creature, pose);
-
         uint32 accountId = saver->GetSession()->GetAccountId();
-        WorldDatabase.Execute(fmt::format(
+        auto transaction = WorldDatabase.BeginTransaction();
+        transaction->PAppend("UPDATE creature SET size = {} WHERE guid = {} AND id = {}", pose.Size, pose.SpawnId, pose.Entry);
+        transaction->PAppend(
             "REPLACE INTO `saved_npc` (`entry`, `guid`, `animation`, `size`, `mount`, `byte1`, `byte2`, `auras`, `gm_account_id`) "
-            "VALUES ({}, {}, {}, {}, {}, {}, {}, '0', {})",
-            pose.Entry, pose.SpawnId, pose.Animation, pose.Size, pose.Mount, pose.Byte1, pose.Byte2, accountId).c_str());
+            "SELECT id, guid, {}, {}, {}, {}, {}, '0', {} FROM creature WHERE guid = {} AND id = {}",
+            pose.Animation, pose.Size, pose.Mount, pose.Byte1, pose.Byte2, accountId, pose.SpawnId, pose.Entry);
+
+        ObjectGuid author = saver->GetGUID();
+        ObjectGuid liveGuid = creature->GetGUID();
+        uint32 mapId = creature->GetMapId();
+        float previousSize = creature->GetCreatureData()->size;
+        auto callback = WorldDatabase.AsyncCommitTransaction(transaction);
+        callback.AfterComplete([this, pose, author, liveGuid, mapId, previousSize](bool success)
+        {
+            CreatureData const* savedData = sObjectMgr->GetCreatureData(pose.SpawnId);
+            success = success && savedData && savedData->id == pose.Entry;
+            {
+                std::lock_guard callbackLock(_mutex);
+                _pending.erase(pose.SpawnId);
+                if (success)
+                {
+                    _poses[pose.SpawnId] = pose;
+                    _applied[mapId][pose.SpawnId] = liveGuid;
+                    if (CreatureData const* data = sObjectMgr->GetCreatureData(pose.SpawnId);
+                        data && data->id == pose.Entry && data->size == previousSize)
+                        const_cast<CreatureData*>(data)->size = pose.Size;
+                }
+            }
+            if (Player* player = ObjectAccessor::FindConnectedPlayer(author))
+                ChatHandler(player->GetSession()).SendSysMessage(success ? "Поза НИП сохранена." : "Ошибка БД: поза НИП не сохранена.");
+        });
+        Commits.AddCallback(std::move(callback));
 
         if (handler)
-            handler->SendSysMessage("Поза NPC сохранена.");
+            handler->SendSysMessage("Поза сохраняется; дождитесь подтверждения.");
 
         return true;
     }

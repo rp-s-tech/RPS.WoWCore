@@ -240,7 +240,8 @@ void Roleplay::CreatureSetAnimKitId(Creature* creature, uint16 animKitId)
 }
 
 void Roleplay::CreatureSetModel(Creature* creature, uint32 displayId) {
-    creature->SetDisplayId(displayId);
+    // SaveToDB and RestoreDisplayId use the native model, not the visible override.
+    creature->SetDisplayId(displayId, true);
 
     _creatureExtraStore[creature->GetSpawnId()].displayLock = true;
     _creatureExtraStore[creature->GetSpawnId()].displayId = displayId;

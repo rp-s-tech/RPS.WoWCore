@@ -515,7 +515,11 @@ void Roleplay::ApplyCustomNpcStateToCreature(Creature* creature, uint32 template
 
     creature->SetName(cTemplate.Name);
 
-    if (CreatureOutfit::IsFake(model.CreatureDisplayID))
+    // A model explicitly assigned to this spawn takes precedence over its template.
+    CreatureExtraData const* extra = GetCreatureExtraData(creature->GetSpawnId());
+    if (extra && extra->displayLock)
+        creature->SetDisplayId(extra->displayId, true);
+    else if (CreatureOutfit::IsFake(model.CreatureDisplayID))
     {
         if (std::shared_ptr<CreatureOutfit> const& outfit = sObjectMgr->GetOutfit(model.CreatureDisplayID))
             creature->SetOutfit(outfit);
@@ -527,6 +531,10 @@ void Roleplay::ApplyCustomNpcStateToCreature(Creature* creature, uint32 template
         creature->SetDisplayId(model.CreatureDisplayID, true);
         creature->SetObjectScale(model.DisplayScale);
     }
+
+    // A saved spawn size also takes precedence when refreshing its template appearance.
+    if (CreatureData const* data = creature->GetCreatureData(); data && data->size > 0.0f)
+        creature->SetObjectScale(data->size);
 
     creature->LoadEquipment(0);
     creature->LoadEquipment(variation);

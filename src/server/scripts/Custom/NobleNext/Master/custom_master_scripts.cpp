@@ -6,6 +6,9 @@
 
 #include "Player.h"
 #include "ScriptMgr.h"
+#include "DB2Stores.h"
+#include "Map.h"
+#include <fmt/format.h>
 
 namespace RoleplayCore::NobleNext
 {
@@ -18,29 +21,21 @@ namespace RoleplayCore::NobleNext
         {
             NpcPoseService::Instance().LoadFromDatabase();
         }
+        void OnUpdate(uint32 diff) override { NpcPoseService::Instance().Update(diff); }
     };
 
-    class master_player_script : public PlayerScript
+    class master_map_script : public WorldMapScript
     {
     public:
-        master_player_script() : PlayerScript("noble_next_master_player_script") { }
-
-        void OnLogin(Player* player, bool /*firstLogin*/) override
-        {
-            if (player)
-                NpcPoseService::Instance().ApplyNearby(player, 200.f);
-        }
-
-        void OnMapChanged(Player* player) override
-        {
-            if (player)
-                NpcPoseService::Instance().ApplyNearby(player, 200.f);
-        }
+        explicit master_map_script(uint32 id) : WorldMapScript(fmt::format("noble_next_pose_map_{}", id).c_str(), id) { }
+        void OnUpdate(Map* map, uint32 diff) override { NpcPoseService::Instance().UpdateMap(map, diff); }
+        void OnDestroy(Map* map) override { NpcPoseService::Instance().ForgetMap(map); }
     };
 }
 
 void AddSC_NobleNextMasterScripts()
 {
     new RoleplayCore::NobleNext::master_world_script();
-    new RoleplayCore::NobleNext::master_player_script();
+    for (MapEntry const* entry : sMapStore)
+        if (entry->IsWorldMap()) new RoleplayCore::NobleNext::master_map_script(entry->ID);
 }

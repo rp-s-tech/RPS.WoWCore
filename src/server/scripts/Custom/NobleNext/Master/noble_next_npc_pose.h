@@ -1,11 +1,16 @@
 #pragma once
 
 #include "Define.h"
+#include "ObjectGuid.h"
+#include <map>
+#include <mutex>
+#include <set>
 #include <unordered_map>
 
 class ChatHandler;
 class Creature;
 class Player;
+class Map;
 
 namespace RoleplayCore::NobleNext
 {
@@ -27,8 +32,9 @@ namespace RoleplayCore::NobleNext
 
         void LoadFromDatabase();
         bool SaveCreaturePose(Creature* creature, Player* saver, ChatHandler* handler);
-        void ApplyIfSaved(Creature* creature) const;
-        void ApplyNearby(Player* player, float range) const;
+        void Update(uint32 diff);
+        void UpdateMap(Map* map, uint32 diff);
+        void ForgetMap(Map* map);
 
     private:
         NpcPoseService() = default;
@@ -36,5 +42,9 @@ namespace RoleplayCore::NobleNext
         static void ApplyPose(Creature* creature, SavedNpcPose const& pose);
 
         std::unordered_map<ObjectGuid::LowType, SavedNpcPose> _poses;
+        std::set<ObjectGuid::LowType> _pending;
+        std::map<uint32, std::map<ObjectGuid::LowType, ObjectGuid>> _applied;
+        std::map<uint32, uint32> _timers;
+        std::mutex _mutex;
     };
 }
