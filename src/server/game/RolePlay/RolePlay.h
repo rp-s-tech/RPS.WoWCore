@@ -10,6 +10,7 @@
 #include "RaceMask.h"
 #include "Optional.h"
 #include "UpdateField.h"
+#include <G3D/Vector3.h>
 #include <fmt/printf.h>
 
 struct PlayerExtraData
@@ -239,6 +240,8 @@ public:
     void SetNpcLeftHand(uint32 templateId, uint8 variationId, int32 itemId, int32 appearanceModId);
     void SetNpcRightHand(uint32 templateId, uint8 variationId, int32 itemId, int32 appearanceModId);
     void SetNpcRanged(uint32 templateId, uint8 variationId, int32 itemId, int32 appearanceModId);
+    // Custom NPC hands keep only these items: ObjectMgr::LoadEquipmentTemplates drops the rest on startup
+    static bool IsNpcHandItem(InventoryType inventoryType);
 
     // Marker
     void StoreMarkerLocationForPlayer(Player* player, const WorldLocation* marker);

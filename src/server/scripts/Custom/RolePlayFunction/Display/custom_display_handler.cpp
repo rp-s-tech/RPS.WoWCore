@@ -22,43 +22,19 @@ namespace RoleplayCore
         {DISPLAY_TYPE_OFF, EQUIPMENT_SLOT_OFFHAND},
     };
 
-    const std::map<InventoryType, DisplayType> DisplayHandler::m_inv_type_to_disp_type = {
-        {INVTYPE_HEAD, DISPLAY_TYPE_HEAD},
-        {INVTYPE_SHOULDERS, DISPLAY_TYPE_SHOULDERS},
-        {INVTYPE_BODY, DISPLAY_TYPE_SHIRT},
-        {INVTYPE_CHEST, DISPLAY_TYPE_CHEST},
-        {INVTYPE_ROBE, DISPLAY_TYPE_CHEST},
-        {INVTYPE_WAIST, DISPLAY_TYPE_WAIST},
-        {INVTYPE_LEGS, DISPLAY_TYPE_PANTS},
-        {INVTYPE_FEET, DISPLAY_TYPE_BOOTS},
-        {INVTYPE_WRISTS, DISPLAY_TYPE_WRISTS},
-        {INVTYPE_HANDS, DISPLAY_TYPE_HANDS},
-        {INVTYPE_CLOAK, DISPLAY_TYPE_BACK},
-        {INVTYPE_TABARD, DISPLAY_TYPE_TABARD},
-        {INVTYPE_WEAPONMAINHAND, DISPLAY_TYPE_MAIN},
-        {INVTYPE_WEAPON, DISPLAY_TYPE_MAIN},
-        {INVTYPE_WEAPONOFFHAND, DISPLAY_TYPE_OFF},
-        {INVTYPE_SHIELD, DISPLAY_TYPE_SHIELD},
-        {INVTYPE_RANGEDRIGHT, DISPLAY_TYPE_RANGED},
-        {INVTYPE_RANGED, DISPLAY_TYPE_RANGED},
-    };
-
-    const std::map<DisplayType, std::vector<DisplayType>> DisplayHandler::m_display_map = {
-        {DISPLAY_TYPE_HEAD, {DISPLAY_TYPE_HEAD}},
-        {DISPLAY_TYPE_CHEST, {DISPLAY_TYPE_BACK, DISPLAY_TYPE_CHEST, DISPLAY_TYPE_SHIRT, DISPLAY_TYPE_HANDS, DISPLAY_TYPE_WRISTS, DISPLAY_TYPE_BOOTS, DISPLAY_TYPE_TABARD, DISPLAY_TYPE_PANTS}},
-        {DISPLAY_TYPE_SHIRT, {DISPLAY_TYPE_BACK, DISPLAY_TYPE_CHEST, DISPLAY_TYPE_SHIRT, DISPLAY_TYPE_HANDS, DISPLAY_TYPE_WRISTS, DISPLAY_TYPE_BOOTS, DISPLAY_TYPE_TABARD, DISPLAY_TYPE_PANTS}},
-        {DISPLAY_TYPE_TABARD, {DISPLAY_TYPE_WAIST, DISPLAY_TYPE_CHEST, DISPLAY_TYPE_SHIRT, DISPLAY_TYPE_BOOTS, DISPLAY_TYPE_TABARD, DISPLAY_TYPE_PANTS}},
-        {DISPLAY_TYPE_BACK, {DISPLAY_TYPE_BACK, DISPLAY_TYPE_CHEST, DISPLAY_TYPE_PANTS}},
-        {DISPLAY_TYPE_WRISTS, {DISPLAY_TYPE_BACK, DISPLAY_TYPE_WRISTS, DISPLAY_TYPE_HANDS, DISPLAY_TYPE_SHIRT, DISPLAY_TYPE_CHEST}},
-        {DISPLAY_TYPE_HANDS, {DISPLAY_TYPE_WRISTS, DISPLAY_TYPE_HANDS, DISPLAY_TYPE_SHIRT, DISPLAY_TYPE_CHEST}},
-        {DISPLAY_TYPE_WAIST, {DISPLAY_TYPE_WAIST, DISPLAY_TYPE_SHIRT}},
-        {DISPLAY_TYPE_SHOULDERS, {DISPLAY_TYPE_SHOULDERS}},
-        {DISPLAY_TYPE_PANTS, {DISPLAY_TYPE_PANTS, DISPLAY_TYPE_CHEST, DISPLAY_TYPE_BOOTS}},
-        {DISPLAY_TYPE_BOOTS, {DISPLAY_TYPE_BOOTS, DISPLAY_TYPE_PANTS, DISPLAY_TYPE_CHEST}},
-        {DISPLAY_TYPE_OFF, {DISPLAY_TYPE_OFF, DISPLAY_TYPE_RANGED, DISPLAY_TYPE_SHIELD, DISPLAY_TYPE_MAIN}},
-        {DISPLAY_TYPE_RANGED, {DISPLAY_TYPE_OFF, DISPLAY_TYPE_RANGED, DISPLAY_TYPE_SHIELD, DISPLAY_TYPE_MAIN}},
-        {DISPLAY_TYPE_SHIELD, {DISPLAY_TYPE_OFF, DISPLAY_TYPE_RANGED, DISPLAY_TYPE_SHIELD, DISPLAY_TYPE_MAIN}},
-        {DISPLAY_TYPE_MAIN, {DISPLAY_TYPE_OFF, DISPLAY_TYPE_RANGED, DISPLAY_TYPE_SHIELD, DISPLAY_TYPE_MAIN}},
+    // Weapons have no hidden appearance
+    const std::map<DisplayType, uint32> DisplayHandler::m_hidden_items = {
+        {DISPLAY_TYPE_HEAD, 134110},      // Hidden Helm
+        {DISPLAY_TYPE_SHOULDERS, 134112}, // Hidden Shoulder
+        {DISPLAY_TYPE_SHIRT, 142503},     // Hidden Shirt
+        {DISPLAY_TYPE_CHEST, 168659},     // Hidden Chestpiece
+        {DISPLAY_TYPE_WAIST, 143539},     // Hidden Belt
+        {DISPLAY_TYPE_PANTS, 216696},     // Hidden Pants
+        {DISPLAY_TYPE_BOOTS, 168664},     // Hidden Boots
+        {DISPLAY_TYPE_WRISTS, 168665},    // Hidden Bracers
+        {DISPLAY_TYPE_HANDS, 158329},     // Hidden Gloves
+        {DISPLAY_TYPE_BACK, 134111},      // Hidden Cloak
+        {DISPLAY_TYPE_TABARD, 142504},    // Hidden Tabard
     };
 
     void DisplayHandler::Display(ChatHandler* handler, DisplayType type, uint32 id, uint32 bonus, bool isSecondary)
@@ -93,7 +69,6 @@ namespace RoleplayCore
             }
 
             player->SetVisibleItemSlot(itemSlot, item);
-            item->ClearBonuses();
             item->SetState(ITEM_CHANGED, player);
             return;
         }
@@ -147,6 +122,11 @@ namespace RoleplayCore
                 }
         }
 
+        // Default appearance is a map lookup; the full scan below is only a fallback
+        if (ItemModifiedAppearanceEntry const* modifiedAppearance = TransmogMgr::GetDefaultItemModifiedAppearance(id))
+            if (ApplyModifiedAppearance(modifiedAppearance->ID, modifiedAppearance->ItemAppearanceID, item, player, handler, itemSlot, isSecondary))
+                return;
+
         for (ItemModifiedAppearanceEntry const* modifiedAppearance : sItemModifiedAppearanceStore)
         {
             if (modifiedAppearance->ItemID != id || modifiedAppearance->ItemAppearanceID == 0)
@@ -157,6 +137,21 @@ namespace RoleplayCore
         }
 
         handler->SendSysMessage("Target item has no appearance.");
+    }
+
+    void DisplayHandler::Hide(ChatHandler* handler, DisplayType type, bool isSecondary)
+    {
+        if (!handler || !handler->GetPlayer())
+            return;
+
+        auto hiddenItem = m_hidden_items.find(type);
+        if (hiddenItem == m_hidden_items.end())
+        {
+            handler->SendSysMessage("This slot can't be hidden.");
+            return;
+        }
+
+        Display(handler, type, hiddenItem->second, 0, isSecondary);
     }
 
     void DisplayHandler::ResetItem(Item* item)
@@ -185,32 +180,9 @@ namespace RoleplayCore
         if (!item || !player || !handler || apID == 0)
             return false;
 
-        auto targetAppearance = sItemAppearanceStore.LookupEntry(apID);
-        if (!targetAppearance)
+        // Any appearance fits any slot: the client draws what it can of it
+        if (!sItemAppearanceStore.LookupEntry(apID))
             return false;
-
-        auto targetType = static_cast<DisplayType>(targetAppearance->DisplayType);
-        auto playerType = GetDisplayType(item);
-
-        if (targetType == DISPLAY_TYPE_NONE || playerType == DISPLAY_TYPE_NONE)
-        {
-            handler->SendSysMessage("Target item is not part of equipment.");
-            return false;
-        }
-
-        // Check if the target item type is compatible with the player's item type
-        const auto& validSlots = m_display_map.find(playerType);
-        if (validSlots == m_display_map.end())
-            return false;
-
-        // Use std::find to search in a vector instead of std::find in a list
-        bool itemIsValid = std::find(validSlots->second.begin(), validSlots->second.end(), targetType) != validSlots->second.end();
-
-        if (!itemIsValid)
-        {
-            handler->SendSysMessage("Target item type does not match your item type.");
-            return false;
-        }
 
         uint32 savedPrimary = item->GetModifier(ITEM_MODIFIER_TRANSMOG_APPEARANCE_ALL_SPECS);
 
@@ -232,31 +204,6 @@ namespace RoleplayCore
         player->SetVisibleItemSlot(itemSlot, item);
 
         return true;
-    }
-
-    DisplayType DisplayHandler::GetDisplayType(Item* item)
-    {
-        if (!item)
-            return DISPLAY_TYPE_NONE;
-
-        DisplayType result = DISPLAY_TYPE_NONE;
-
-        // Check if the item has a modified appearance
-        if (auto appearanceModifiedEntry = item->GetItemModifiedAppearance())
-        {
-            if (auto appearanceEntry = sItemAppearanceStore.LookupEntry(appearanceModifiedEntry->ItemAppearanceID))
-            {
-                return static_cast<DisplayType>(appearanceEntry->DisplayType);
-            }
-        }
-        // If no modified type is found, use the type from the item template
-        auto inventoryType = item->GetTemplate()->GetInventoryType();
-        auto typeIter = m_inv_type_to_disp_type.find(inventoryType);
-
-        if (typeIter != m_inv_type_to_disp_type.end())
-            result = typeIter->second;
-
-        return result;
     }
 };
 

@@ -856,6 +856,11 @@ int32 Roleplay::GetPlayerVisibleSlotDisplayId(Player const* player, EquipmentSlo
     return 0;
 }
 
+bool Roleplay::IsNpcHandItem(InventoryType inventoryType)
+{
+    return advstd::ranges::contains(InventoryTypesEquipable, inventoryType);
+}
+
 bool Roleplay::PopulateEquipmentItemFromPlayer(Player const* player, EquipmentSlots visibleSlot, EquipmentItem& item) const
 {
     item.ItemId = 0;
@@ -872,9 +877,14 @@ bool Roleplay::PopulateEquipmentItemFromPlayer(Player const* player, EquipmentSl
         {
             if (ItemModifiedAppearanceEntry const* modifiedAppearance = sItemModifiedAppearanceStore.LookupEntry(visible.ItemModifiedAppearanceID))
             {
-                item.ItemId = uint32(modifiedAppearance->ItemID);
-                item.AppearanceModId = uint16(modifiedAppearance->ItemAppearanceModifierID);
-                return item.ItemId != 0;
+                // .disp can show armor in a hand: copy the equipped item instead
+                ItemEntry const* appearanceItem = sItemStore.LookupEntry(modifiedAppearance->ItemID);
+                if (appearanceItem && IsNpcHandItem(InventoryType(appearanceItem->InventoryType)))
+                {
+                    item.ItemId = uint32(modifiedAppearance->ItemID);
+                    item.AppearanceModId = uint16(modifiedAppearance->ItemAppearanceModifierID);
+                    return item.ItemId != 0;
+                }
             }
         }
     }

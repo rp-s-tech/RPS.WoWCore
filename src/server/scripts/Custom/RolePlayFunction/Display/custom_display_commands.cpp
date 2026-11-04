@@ -3,6 +3,7 @@
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "Common.h"
+#include "StringConvert.h"
 
 namespace RoleplayCore
 {
@@ -52,8 +53,21 @@ namespace RoleplayCore
             if (!id)
                 return false;
 
-            // Retrieve item ID
-            uint32 itemId = static_cast<uint32>(strtoul(id, nullptr, 10));
+            // "-1" hides the slot visual
+            if (!strcmp(id, "-1"))
+            {
+                DisplayHandler::GetInstance().Hide(handler, T, secondary);
+                return true;
+            }
+
+            // Retrieve item ID: only an exact "0" resets the slot, a typo must not
+            Optional<uint32> itemId = Trinity::StringTo<uint32>(id);
+            if (!itemId || (*itemId == 0 && strcmp(id, "0") != 0))
+            {
+                handler->SendSysMessage("Usage: .disp <slot> <itemId|0|-1> [bonus]");
+                handler->SetSentErrorMessage(true);
+                return false;
+            }
 
             // Retrieve the bonus, if specified
             uint32 bonus = 0;
@@ -62,7 +76,7 @@ namespace RoleplayCore
                 bonus = strtol(bonusStr, NULL, 10);
 
             // Call the display handler
-            DisplayHandler::GetInstance().Display(handler, T, itemId, bonus, secondary);
+            DisplayHandler::GetInstance().Display(handler, T, *itemId, bonus, secondary);
             return true;
         }
     };
