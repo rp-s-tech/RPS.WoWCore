@@ -43,6 +43,7 @@ namespace RoleplayCore
 
         // Public methods
         void Display(ChatHandler* handler, DisplayType type, uint32 id, uint32 bonus, bool isSecondary);
+        void Hide(ChatHandler* handler, DisplayType type, bool isSecondary);
 
     private:
         // Hidden constructor for singleton
@@ -50,11 +51,9 @@ namespace RoleplayCore
 
         void ResetItem(Item* item);
         bool ApplyModifiedAppearance(int modApID, int apID, Item* item, Player* player, ChatHandler* handler, EquipmentSlots itemSlot, bool isSecondary);
-        DisplayType GetDisplayType(Item* item);
 
         // Constants are better declared as static constexpr to improve performance
         static const std::map<DisplayType, EquipmentSlots> m_item_slots;
-        static const std::map<InventoryType, DisplayType> m_inv_type_to_disp_type;
-        static const std::map<DisplayType, std::vector<DisplayType>> m_display_map; // Use vector instead of list for quick access
+        static const std::map<DisplayType, uint32> m_hidden_items; // "Hidden X" items, known to every player (CollectionMgr)
     };
 }
