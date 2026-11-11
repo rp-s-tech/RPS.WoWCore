@@ -37,7 +37,7 @@ namespace RoleplayCore
         {DISPLAY_TYPE_TABARD, 142504},    // Hidden Tabard
     };
 
-    void DisplayHandler::Display(ChatHandler* handler, DisplayType type, uint32 id, uint32 bonus, bool isSecondary)
+    void DisplayHandler::Display(ChatHandler* handler, DisplayType type, uint32 id, uint32 bonus, bool isSecondary, bool exactVariant)
     {
         if (!handler || !handler->GetPlayer())
             return;
@@ -108,6 +108,16 @@ namespace RoleplayCore
 
             return true;
         };
+
+        // Wardrobe snapshots carry an appearance modifier, never an artifact appearance ID.
+        if (exactVariant)
+        {
+            auto appearance = TransmogMgr::GetItemModifiedAppearance(id, bonus);
+            if (!appearance || appearance->ItemAppearanceModifierID != bonus ||
+                !ApplyModifiedAppearance(appearance->ID, appearance->ItemAppearanceID, item, player, handler, itemSlot, isSecondary))
+                handler->SendSysMessage("Item appearance variant not found.");
+            return;
+        }
 
         if (bonus != 0 && applyArtifactAppearance(bonus))
             return;
