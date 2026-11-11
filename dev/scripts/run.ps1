@@ -40,8 +40,11 @@ switch ($Action) {
     'update' {
         $env:TC_UPDATES_ENABLE_DATABASES = '15'
         $env:TC_UPDATES_AUTO_SETUP = '0'
+        # Apply new filenames only. Preserve the ledger for retired/manual packages.
+        $env:TC_UPDATES_REDUNDANCY = '0'
+        $env:TC_UPDATES_CLEAN_DEAD_REF_MAX_COUNT = '0'
         Push-Location $bin
-        try { & $path -u; $code = $LASTEXITCODE } finally { Pop-Location }
+        try { & $path -c $conf --config-dir (Join-Path $bin 'worldserver.conf.d') -u; $code = $LASTEXITCODE } finally { Pop-Location }
         Write-Host "run: update pass exit code $code"; exit $code
     }
 }

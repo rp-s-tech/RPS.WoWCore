@@ -2,16 +2,16 @@
 -- Select the HOTFIXES database explicitly; run only with writers stopped.
 -- Custom records use VerifiedBuild=0 (DB2DatabaseLoader custom pass).
 -- First verify the deployed client/server DB2 IDs; SQL cannot inspect those files.
--- Set @rps_action_push_id to a reviewed unused positive hotfix push range start (9 IDs) before SOURCE.
 -- Default 1203105..1203113 follows the dice range 1203075..1203104.
--- No REPLACE/IGNORE/upsert: any occupied range aborts; reruns intentionally fail.
+-- A complete published package is kept as installed. Partial or conflicting installations abort before writing.
 -- Use a client that stops on SQL errors, never --force. Requires routine privileges.
 
 SET @rps_action_push_id = 1203105;
 
+DROP PROCEDURE IF EXISTS rps_install_action_20261027;
 DELIMITER $$
 CREATE PROCEDURE rps_install_action_20261027(IN push_id BIGINT)
-BEGIN
+install_package: BEGIN
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -21,6 +21,20 @@ BEGIN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Set an unused positive @rps_action_push_id first';
     END IF;
     START TRANSACTION;
+
+    -- Published keys identify the installation even after later pushes change its icons or labels.
+    IF (SELECT COUNT(*) FROM `spell_name` n
+        JOIN `spell_name_locale` l ON l.`ID` = n.`ID` AND l.`VerifiedBuild` = 0 AND l.`locale` = 'ruRU'
+        JOIN `spell_misc` m ON m.`ID` = n.`ID` AND m.`VerifiedBuild` = 0 AND m.`SpellID` = n.`ID`
+        JOIN `spell_effect` e ON e.`ID` = n.`ID` AND e.`VerifiedBuild` = 0 AND e.`SpellID` = n.`ID`
+        WHERE n.`ID` BETWEEN 1500011 AND 1500013 AND n.`VerifiedBuild` = 0
+          AND e.`Effect` = 3 AND e.`EffectIndex` = 0 AND e.`ImplicitTarget1` = 1) = 3
+       AND (SELECT COUNT(DISTINCT `TableHash`, `RecordId`) FROM `hotfix_data`
+            WHERE `TableHash` IN (0x46C66698, 0xC603EE28, 0xF04238A5) AND `RecordId` BETWEEN 1500011 AND 1500013
+              AND `Status` = 1 AND `VerifiedBuild` = 0) = 9 THEN
+        COMMIT;
+        LEAVE install_package;
+    END IF;
     IF EXISTS (SELECT 1 FROM `artifact_power_rank` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `azerite_power` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `flight_capability` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
@@ -49,6 +63,10 @@ BEGIN
        OR EXISTS (SELECT 1 FROM `spell_learn_spell` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `spell_levels` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `spell_misc` WHERE `ID` BETWEEN 1500011 AND 1500013 OR `SpellID` BETWEEN 1500011 AND 1500013)
+       OR EXISTS (SELECT 1 FROM `spell` WHERE `ID` BETWEEN 1500011 AND 1500013)
+       OR EXISTS (SELECT 1 FROM `spell_locale` WHERE `ID` BETWEEN 1500011 AND 1500013)
+       OR EXISTS (SELECT 1 FROM `skill_line_ability` WHERE `ID` BETWEEN 1500011 AND 1500013 OR `Spell` BETWEEN 1500011 AND 1500013)
+       OR EXISTS (SELECT 1 FROM `skill_line_ability_locale` WHERE `ID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `spell_name` WHERE `ID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `spell_name_locale` WHERE `ID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `spell_power` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
@@ -61,8 +79,8 @@ BEGIN
        OR EXISTS (SELECT 1 FROM `spell_x_spell_visual` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `talent` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
        OR EXISTS (SELECT 1 FROM `trait_definition` WHERE `SpellID` BETWEEN 1500011 AND 1500013)
-       OR EXISTS (SELECT 1 FROM `hotfix_blob` WHERE `TableHash` IN (0x46C66698, 0xC603EE28, 0xF04238A5) AND `RecordId` BETWEEN 1500011 AND 1500013)
-       OR EXISTS (SELECT 1 FROM `hotfix_data` WHERE `Id` BETWEEN push_id AND push_id + 8 OR `UniqueId` BETWEEN push_id AND push_id + 8 OR (`TableHash` IN (0x46C66698, 0xC603EE28, 0xF04238A5) AND `RecordId` BETWEEN 1500011 AND 1500013)) THEN
+       OR EXISTS (SELECT 1 FROM `hotfix_blob` WHERE `TableHash` IN (0x46C66698, 0xC603EE28, 0xF04238A5, 0xE111669E, 0xFF4446F6) AND `RecordId` BETWEEN 1500011 AND 1500013)
+       OR EXISTS (SELECT 1 FROM `hotfix_data` WHERE `Id` BETWEEN push_id AND push_id + 8 OR `UniqueId` BETWEEN push_id AND push_id + 8 OR (`TableHash` IN (0x46C66698, 0xC603EE28, 0xF04238A5, 0xE111669E, 0xFF4446F6) AND `RecordId` BETWEEN 1500011 AND 1500013)) THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'RPS action IDs or hotfix push ID already occupied; nothing inserted';
     END IF;
     INSERT INTO `spell_name` (`ID`, `Name`, `VerifiedBuild`) VALUES

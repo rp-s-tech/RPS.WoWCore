@@ -100,7 +100,7 @@ db-up:
 	@$(PS) dev\scripts\db.ps1 -Action up $(DB_ARGS)
 
 db-check:
-	@$(PS) dev\scripts\db.ps1 -Action check $(DB_ARGS)
+	@$(PS) dev\scripts\db.ps1 -Action check -BinDir "$(BIN_DIR)" $(DB_ARGS)
 
 db-backup:
 	@$(PS) dev\scripts\db.ps1 -Action backup $(DB_ARGS)
@@ -117,6 +117,7 @@ db-import:
 
 # One update pass (mask 15: auth, characters, world, hotfixes). Back up first.
 db-update:
+	@$(PS) dev\scripts\db.ps1 -Action check -VerifyUpdateTarget -BinDir "$(BIN_DIR)" $(DB_ARGS)
 	@$(PS) dev\scripts\run.ps1 -Action update $(RUN_ARGS)
 
 # --- servers ---
