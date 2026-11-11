@@ -661,7 +661,7 @@ uint64 RoleplayPhaseMgr::GetSpawnPhaseId(RoleplayPhaseSpawnType type, uint64 spa
 uint64 RoleplayPhaseMgr::GetSpawnPhaseId(RoleplayPhaseSpawnType type, uint64 spawnId, uint32 mapId) const
 {
     std::shared_ptr<Snapshot const> snapshot = GetSnapshot();
-    if (!snapshot || !mapId)
+    if (!snapshot)
         return 0;
 
     Snapshot::SpawnKey const key{ type, spawnId };
@@ -677,12 +677,9 @@ bool RoleplayPhaseMgr::AssignPersistentSpawn(RoleplayPhaseSpawnType type, uint64
     if (!spawnId)
         return false;
 
-    uint32 const actualMapId = type == RoleplayPhaseSpawnType::Creature
-        ? (sObjectMgr->GetCreatureData(static_cast<ObjectGuid::LowType>(spawnId))
-                ? sObjectMgr->GetCreatureData(static_cast<ObjectGuid::LowType>(spawnId))->mapId : 0)
-        : (sObjectMgr->GetGameObjectData(static_cast<ObjectGuid::LowType>(spawnId))
-                ? sObjectMgr->GetGameObjectData(static_cast<ObjectGuid::LowType>(spawnId))->mapId : 0);
-    return actualMapId == mapId && AssignPersistentSpawns(type, { spawnId }, phaseId);
+    SpawnData const* data = sObjectMgr->GetSpawnData(
+        type == RoleplayPhaseSpawnType::Creature ? SPAWN_TYPE_CREATURE : SPAWN_TYPE_GAMEOBJECT, spawnId);
+    return data && data->mapId == mapId && AssignPersistentSpawns(type, { spawnId }, phaseId);
 }
 
 bool RoleplayPhaseMgr::ClearPersistentSpawn(RoleplayPhaseSpawnType type, uint64 spawnId)
@@ -699,13 +696,11 @@ bool RoleplayPhaseMgr::AssignPersistentSpawns(RoleplayPhaseSpawnType type, std::
     mappings.reserve(spawnIds.size());
     for (uint64 spawnId : spawnIds)
     {
-        ObjectGuid::LowType const objectSpawnId = static_cast<ObjectGuid::LowType>(spawnId);
-        uint32 const mapId = type == RoleplayPhaseSpawnType::Creature
-            ? (sObjectMgr->GetCreatureData(objectSpawnId) ? sObjectMgr->GetCreatureData(objectSpawnId)->mapId : 0)
-            : (sObjectMgr->GetGameObjectData(objectSpawnId) ? sObjectMgr->GetGameObjectData(objectSpawnId)->mapId : 0);
-        if (!spawnId || !mapId || !sMapStore.LookupEntry(mapId))
+        SpawnData const* data = sObjectMgr->GetSpawnData(
+            type == RoleplayPhaseSpawnType::Creature ? SPAWN_TYPE_CREATURE : SPAWN_TYPE_GAMEOBJECT, spawnId);
+        if (!spawnId || !data || !sMapStore.LookupEntry(data->mapId))
             return false;
-        mappings.emplace_back(spawnId, mapId);
+        mappings.emplace_back(spawnId, data->mapId);
     }
 
     std::sort(mappings.begin(), mappings.end());
@@ -1570,7 +1565,7 @@ bool RoleplayPhaseMgr::SetMemberRole(uint64 phaseId, uint64 characterGuid, Rolep
 bool RoleplayPhaseMgr::SetEnterSpawnPoint(uint64 phaseId, uint32 mapId, float x, float y, float z, float o,
     uint64 actorCharacterGuid, uint32 actorAccountId, bool staffAccess, bool serverStaff)
 {
-    if (!mapId || !sMapStore.LookupEntry(mapId)
+    if (!sMapStore.LookupEntry(mapId)
         || !CanManage(phaseId, actorCharacterGuid, actorAccountId, staffAccess, serverStaff))
         return false;
 

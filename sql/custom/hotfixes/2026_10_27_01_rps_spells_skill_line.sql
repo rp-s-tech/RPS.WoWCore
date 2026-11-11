@@ -1,19 +1,19 @@
--- ЭКСПЕРИМЕНТАЛЬНО: SkillLineAbility rows so the 13 RPS spells (1500001..1500013) are listed in the client spellbook.
--- Optional; apply only after 2026_10_26_00_rps_dice_spells.sql and 2026_10_27_00_rps_action_spells.sql.
+-- SkillLineAbility rows so the 13 RPS spells (1500001..1500013) are listed in the client spellbook.
+-- Requires 2026_10_26_00_rps_dice_spells.sql and 2026_10_27_00_rps_action_spells.sql.
 -- SkillLine 183 = GENERIC (DND) (CSVData/skillline.csv; Auto Attack 6603 lives there, SkillRaceClassInfo 5 = all races/classes).
 -- AcquireMethod 0 (Learned): the core never auto-learns or removes these spells; learning stays with the RPS bridge.
 -- ClassMask 16383 (all classes, like Auto Attack 6603): the client spellbook hides SkillLine 183 rows with ClassMask 0. RaceMask 0 = no race restriction.
 -- Select the HOTFIXES database explicitly; run only with writers stopped.
--- Set @rps_skill_line_push_id to a reviewed unused positive hotfix push range start (13 IDs) before SOURCE.
 -- Default 1203114..1203126 follows the action range 1203105..1203113.
--- No REPLACE/IGNORE/upsert: any occupied range aborts; reruns intentionally fail.
+-- A complete published package is kept as installed. Partial or conflicting installations abort before writing.
 -- Use a client that stops on SQL errors, never --force. Requires routine privileges.
 
 SET @rps_skill_line_push_id = 1203114;
 
+DROP PROCEDURE IF EXISTS rps_install_skill_line_20261027;
 DELIMITER $$
 CREATE PROCEDURE rps_install_skill_line_20261027(IN push_id BIGINT)
-BEGIN
+install_package: BEGIN
     DECLARE EXIT HANDLER FOR SQLEXCEPTION
     BEGIN
         ROLLBACK;
@@ -25,6 +25,15 @@ BEGIN
     START TRANSACTION;
     IF (SELECT COUNT(*) FROM `spell_name` WHERE `ID` BETWEEN 1500001 AND 1500013 AND `VerifiedBuild` = 0) <> 13 THEN
         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Apply RPS dice and action spell packages first; nothing inserted';
+    END IF;
+    -- Legacy masks are upgraded by 2026_10_27_03; preserve both published forms here.
+    IF (SELECT COUNT(*) FROM `skill_line_ability` WHERE `ID` BETWEEN 1500001 AND 1500013
+        AND `Spell` = `ID` AND `SkillLine` = 183 AND `VerifiedBuild` = 0 AND `ClassMask` IN (0, 16383)) = 13
+       AND (SELECT COUNT(DISTINCT `RecordId`) FROM `hotfix_data`
+            WHERE `TableHash` = 0xFF4446F6 AND `RecordId` BETWEEN 1500001 AND 1500013
+              AND `Status` = 1 AND `VerifiedBuild` = 0) = 13 THEN
+        COMMIT;
+        LEAVE install_package;
     END IF;
     IF EXISTS (SELECT 1 FROM `skill_line_ability` WHERE `ID` BETWEEN 1500001 AND 1500013 OR `Spell` BETWEEN 1500001 AND 1500013)
        OR EXISTS (SELECT 1 FROM `skill_line_ability_locale` WHERE `ID` BETWEEN 1500001 AND 1500013)

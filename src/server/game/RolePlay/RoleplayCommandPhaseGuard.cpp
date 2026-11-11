@@ -2,6 +2,7 @@
 
 #include "Chat.h"
 #include "Object.h"
+#include "ObjectMgr.h"
 #include "Player.h"
 #include "RBAC.h"
 #include "WorldSession.h"
@@ -50,7 +51,7 @@ uint64 GetSpawnPhaseId(Player const* viewer, RoleplayPhaseSpawnType type, uint64
     if (!viewer || !spawnId)
         return 0;
 
-    return sRoleplayPhaseMgr.GetSpawnPhaseId(type, spawnId, viewer->GetMapId());
+    return sRoleplayPhaseMgr.GetSpawnPhaseId(type, spawnId);
 }
 
 SpawnContext Resolve(Player const* viewer, RoleplayPhaseSpawnType type, uint64 spawnId)
@@ -118,12 +119,26 @@ bool DenyCrossPhase(ChatHandler* handler, SpawnContext const& ctx, std::string_v
 }
 
 bool AllowsViewerSpawnMutation(Player* viewer, ChatHandler* handler, RoleplayPhaseSpawnType type,
-    uint64 spawnId, bool allPhasesBypass, std::string_view auditAction)
+    uint64 spawnId, bool allPhasesBypass, std::string_view auditAction, bool requireCurrentMap)
 {
-    SpawnContext const ctx = Resolve(viewer, type, spawnId);
     if (!viewer || !viewer->GetSession())
         return false;
 
+    // Deletion accepts a persistent GUID even if the grid is unloaded. --all-phases
+    // grants a phase override only, never a remote map or an unknown spawn.
+    SpawnData const* data = sObjectMgr->GetSpawnData(
+        type == RoleplayPhaseSpawnType::Creature ? SPAWN_TYPE_CREATURE : SPAWN_TYPE_GAMEOBJECT, spawnId);
+    if (!data || (requireCurrentMap && data->mapId != viewer->GetMapId()))
+    {
+        if (handler)
+        {
+            handler->SendSysMessage(requireCurrentMap ? "Постоянный спавн не найден на вашей карте." : "Постоянный спавн не найден.");
+            handler->SetSentErrorMessage(true);
+        }
+        return false;
+    }
+
+    SpawnContext const ctx = Resolve(viewer, type, spawnId);
     uint64 const targetPhaseId = ctx.SpawnPhaseId;
     uint64 const characterGuid = viewer->GetGUID().GetCounter();
     uint32 const accountId = viewer->GetSession()->GetAccountId();
@@ -145,7 +160,7 @@ bool AllowsViewerSpawnMutation(Player* viewer, ChatHandler* handler, RoleplayPha
         return DenyCrossPhase(handler, ctx,
             "Cross-phase мутация запрещена. Staff: добавьте --all-phases confirm.");
 
-    if (ctx.CrossPhase && !viewer->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_RP_PHASE_ALL_PHASES))
+    if (allPhasesBypass && !viewer->GetSession()->HasPermission(rbac::RBAC_PERM_COMMAND_RP_PHASE_ALL_PHASES))
     {
         if (handler)
         {

@@ -6,6 +6,7 @@
 #include "noble_next_staff.h"
 
 #include "Chat.h"
+#include "GameObject.h"
 #include "ChatCommand.h"
 #include "ChatCommandTags.h"
 #include "Player.h"
@@ -36,14 +37,14 @@ namespace RoleplayCore::NobleNext
         }
 
         static bool HandleMoveGo(ChatHandler* handler, Optional<GameObjectSpawnId> spawnId,
-            Optional<EXACT_SEQUENCE("--all-phases")> crossPhaseFlag)
+            Optional<EXACT_SEQUENCE("--all-phases")> crossPhaseFlag, Optional<uint32> requestId)
         {
             Player* player = handler->GetPlayer();
             if (!player || !HasStaffPermission(player))
                 return false;
 
             bool const requestedCrossPhase = !!crossPhaseFlag;
-            if (requestedCrossPhase && !spawnId)
+            if (requestedCrossPhase && (!spawnId || !*spawnId))
             {
                 handler->SendSysMessage("[GobMover] --all-phases допустим только с явным GUID цели.");
                 return false;
@@ -55,7 +56,7 @@ namespace RoleplayCore::NobleNext
                 return false;
             }
 
-            if (spawnId)
+            if (spawnId && *spawnId)
             {
                 ObjectGuid::LowType const id = *spawnId;
                 uint64 const activePhaseId = sRoleplayPhaseMgr.GetPlayerPhaseId(player->GetGUID().GetCounter(), player->GetMapId());
@@ -70,8 +71,8 @@ namespace RoleplayCore::NobleNext
                     return false;
                 }
 
-                uint64 selectedPhaseId = 0;
-                if (!GobMoverHandler::Instance().SelectBySpawnId(player, id, requestedCrossPhase, &selectedPhaseId))
+                GameObject* go = GobMoverHandler::Instance().SelectBySpawnId(player, id, requestedCrossPhase);
+                if (!go)
                 {
                     handler->SendSysMessage(fmt::format(
                         "[GobMover] Live GO spawnId {} не загружен на карте игрока "
@@ -85,18 +86,18 @@ namespace RoleplayCore::NobleNext
                     handler->SendSysMessage("[GobMover] Не удалось авторизовать выбранную цель.");
                     return false;
                 }
+                GobMoverHandler::NotifyClientTarget(player, go, targetPhaseId, requestId.value_or(0));
                 handler->SendSysMessage(fmt::format("[GobMover] Выбрана цель {} (logical RP phase {}).",
-                    id, selectedPhaseId).c_str());
+                    id, targetPhaseId).c_str());
                 if (isCrossPhase)
                     sRoleplayPhaseMgr.WriteAudit(player->GetGUID().GetCounter(), player->GetSession()->GetAccountId(),
-                        "gobmover_cross_phase_select", selectedPhaseId,
+                        "gobmover_cross_phase_select", targetPhaseId,
                         fmt::format(R"({{"spawn_id":{},"source_phase":{}}})", id, activePhaseId));
                 return true;
             }
 
-            uint64 targetPhaseId = 0;
-            ObjectGuid::LowType selectedSpawnId = 0;
-            if (!GobMoverHandler::Instance().SelectNearestTarget(player, &targetPhaseId, &selectedSpawnId))
+            GameObject* go = GobMoverHandler::Instance().SelectNearestTarget(player, !requestId);
+            if (!go || !go->GetSpawnId())
             {
                 handler->SendSysMessage(
                     "[GobMover] GO не найден рядом (радиус 50 ярдов, текущая logical RP phase). "
@@ -105,11 +106,13 @@ namespace RoleplayCore::NobleNext
             }
 
             if (!RoleplayCommandPhaseGuard::AuthorizeGobMoverTarget(player,
-                RoleplayPhaseSpawnType::GameObject, selectedSpawnId, false))
+                RoleplayPhaseSpawnType::GameObject, go->GetSpawnId(), false))
             {
                 handler->SendSysMessage("[GobMover] Не удалось авторизовать выбранную цель.");
                 return false;
             }
+            uint64 const targetPhaseId = sRoleplayPhaseMgr.GetSpawnPhaseId(RoleplayPhaseSpawnType::GameObject, go->GetSpawnId(), player->GetMapId());
+            GobMoverHandler::NotifyClientTarget(player, go, targetPhaseId, requestId.value_or(0));
             handler->SendSysMessage(fmt::format("[GobMover] Выбрана цель в logical RP phase {}.", targetPhaseId).c_str());
             return true;
         }

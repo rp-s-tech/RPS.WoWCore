@@ -42,7 +42,7 @@ namespace RoleplayCore
         void operator=(DisplayHandler const&) = delete;
 
         // Public methods
-        void Display(ChatHandler* handler, DisplayType type, uint32 id, uint32 bonus, bool isSecondary);
+        void Display(ChatHandler* handler, DisplayType type, uint32 id, uint32 bonus, bool isSecondary, bool exactVariant = false);
         void Hide(ChatHandler* handler, DisplayType type, bool isSecondary);
 
     private:

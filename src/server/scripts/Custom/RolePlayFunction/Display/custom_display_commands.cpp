@@ -18,6 +18,7 @@ namespace RoleplayCore
         {
             static ChatCommandTable displayCommandTable =
             {
+                { "info",      rbac::RBAC_PERM_COMMAND_DISP,            false, Info, "" },
                 { "head",      rbac::RBAC_PERM_COMMAND_DISP_HEAD,       false, Display<DISPLAY_TYPE_HEAD>,            "" },
                 { "shoulders", rbac::RBAC_PERM_COMMAND_DISP_SHOULDERS,  false, Display<DISPLAY_TYPE_SHOULDERS>,       "" },
                 { "lshoulder", rbac::RBAC_PERM_COMMAND_DISP_SHOULDERS,  false, Display<DISPLAY_TYPE_SHOULDERS, true>, "" },
@@ -40,6 +41,52 @@ namespace RoleplayCore
             };
 
             return commandTable;
+        }
+
+        static bool Info(ChatHandler* handler)
+        {
+            Player* player = handler->GetPlayer();
+            static constexpr std::pair<char const*, EquipmentSlots> slots[] = {
+                { "head", EQUIPMENT_SLOT_HEAD }, { "shoulders", EQUIPMENT_SLOT_SHOULDERS },
+                { "lshoulder", EQUIPMENT_SLOT_SHOULDERS }, { "shirt", EQUIPMENT_SLOT_BODY },
+                { "chest", EQUIPMENT_SLOT_CHEST }, { "waist", EQUIPMENT_SLOT_WAIST },
+                { "legs", EQUIPMENT_SLOT_LEGS }, { "feet", EQUIPMENT_SLOT_FEET },
+                { "wrists", EQUIPMENT_SLOT_WRISTS }, { "hands", EQUIPMENT_SLOT_HANDS },
+                { "back", EQUIPMENT_SLOT_BACK }, { "tabard", EQUIPMENT_SLOT_TABARD },
+                { "mainhand", EQUIPMENT_SLOT_MAINHAND }, { "offhand", EQUIPMENT_SLOT_OFFHAND }
+            };
+            // One short line per slot also fits the addon command channel.
+            std::string snapshot = "{";
+            for (auto const& [key, slot] : slots)
+            {
+                if (!handler->IsHumanReadable())
+                    snapshot += "\n";
+                snapshot += "\"";
+                snapshot += key;
+                snapshot += "\":";
+                if (Item* item = player->GetItemByPos(INVENTORY_SLOT_BAG_0, slot))
+                {
+                    bool secondary = std::string_view(key) == "lshoulder";
+                    uint32 entry = item->GetVisibleEntry(player);
+                    uint32 variant = item->GetVisibleAppearanceModId(player);
+                    if (secondary)
+                    {
+                        auto appearance = sItemModifiedAppearanceStore.LookupEntry(item->GetVisibleSecondaryModifiedAppearanceId(player));
+                        entry = appearance ? appearance->ItemID : 0;
+                        variant = appearance ? appearance->ItemAppearanceModifierID : 0;
+                    }
+                    snapshot += "[" + std::to_string(entry) + "," + std::to_string(variant) + "]";
+                }
+                else
+                    snapshot += "null";
+                snapshot += ",";
+            }
+            snapshot.pop_back();
+            if (!handler->IsHumanReadable())
+                snapshot += "\n";
+            snapshot += "}";
+            handler->SendSysMessage(snapshot);
+            return true;
         }
 
         // Optimized template method for processing display commands
@@ -72,11 +119,19 @@ namespace RoleplayCore
             // Retrieve the bonus, if specified
             uint32 bonus = 0;
             char* bonusStr = strtok(NULL, " ");
-            if (bonusStr)
+            bool exactVariant = bonusStr && bonusStr[0] == 'v';
+            if (exactVariant)
+            {
+                auto variant = Trinity::StringTo<uint32>(bonusStr + 1);
+                if (!variant)
+                    return false;
+                bonus = *variant;
+            }
+            else if (bonusStr)
                 bonus = strtol(bonusStr, NULL, 10);
 
             // Call the display handler
-            DisplayHandler::GetInstance().Display(handler, T, *itemId, bonus, secondary);
+            DisplayHandler::GetInstance().Display(handler, T, *itemId, bonus, secondary, exactVariant);
             return true;
         }
     };

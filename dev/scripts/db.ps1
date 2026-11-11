@@ -13,7 +13,8 @@ param(
     [ValidateSet('docker', 'native')][string]$Mode = 'docker',
     [string]$Container, [string]$DbHost, [int]$DbPort, [string]$DbUser, [string]$Prefix,
     [string]$MySqlDir, [string]$MariaDbDir, [string]$RootUser = 'root',
-    [string]$BackupDir, [string]$DumpDir, [int]$RealmId, [string]$RealmName, [switch]$Force
+    [string]$BackupDir, [string]$DumpDir, [int]$RealmId, [string]$RealmName, [switch]$Force,
+    [string]$BinDir = '.', [switch]$VerifyUpdateTarget
 )
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
@@ -84,6 +85,69 @@ function CoreUserWorks {
 
 function TableCount([scriptblock]$q, [string]$db) {
     [int]("$(& $q "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$db';")".Trim())
+}
+
+# ConfigMgr reads the first populated INI section, then *.conf overrides, then TC_*.
+function Get-UpdateSourceDirectory([string]$runtime) {
+    $conf = Join-Path $runtime 'worldserver.conf'
+    $configDir = Join-Path $runtime 'worldserver.conf.d'
+    $files = @()
+    if (Test-Path -LiteralPath $conf -PathType Leaf) { $files += $conf }
+    elseif ($VerifyUpdateTarget) { throw "db: cannot verify update target without $conf (run: make conf)" }
+    if (Test-Path -LiteralPath $configDir -PathType Container) {
+        $files += @(Get-ChildItem -LiteralPath $configDir -File -Recurse -Force -Filter '*.conf' |
+            Where-Object { $_.Extension -ceq '.conf' } | ForEach-Object { $_.FullName })
+    }
+
+    $settings = @{}
+    $overrides = @{}
+    foreach ($file in $files) {
+        $inSection = $false
+        $hasValues = $false
+        foreach ($raw in [IO.File]::ReadLines($file)) {
+            $line = $raw.Trim()
+            if (-not $line -or $line.StartsWith('#') -or $line.StartsWith(';')) { continue }
+            if ($line.StartsWith('[')) {
+                if ($hasValues) { break }
+                $inSection = $true
+                continue
+            }
+            if (-not $inSection) { break }
+            $hasValues = $true
+            if ($line -cnotmatch '^(SourceDirectory|(?:Login|Character|World|Hotfix)DatabaseInfo)\s*=\s*(.*)$') { continue }
+            $key = $Matches[1]
+            $value = $Matches[2].Trim().Replace('"', '')
+            if ($file -ne $conf) {
+                # Native traversal order is unspecified. Never guess between different overrides.
+                if ($overrides.ContainsKey($key) -and $overrides[$key] -cne $value) { $overrides[$key] = $null }
+                else { $overrides[$key] = $value }
+            }
+            $settings[$key] = $value
+        }
+    }
+    $pools = @{ LoginDatabaseInfo='auth'; CharacterDatabaseInfo='characters'; WorldDatabaseInfo='world'; HotfixDatabaseInfo='hotfixes' }
+    foreach ($key in @('SourceDirectory') + @($pools.Keys)) {
+        $envKey = 'TC_' + ([regex]::Replace($key, '(?<=[a-z])(?=[A-Z])', '_')).ToUpperInvariant()
+        $value = [Environment]::GetEnvironmentVariable($envKey)
+        if ($null -ne $value) { $settings[$key] = $value.Replace('"', '') }
+        elseif ($overrides.ContainsKey($key) -and $null -eq $overrides[$key]) { throw "db: conflicting $key settings in $configDir" }
+        if ($VerifyUpdateTarget -and $key -ne 'SourceDirectory') {
+            $parts = [string]$settings[$key] -split ';'
+            $expected = "$DbHost;$DbPort;$DbUser;$($env:DB_PASS);$Prefix$($pools[$key])"
+            if ($parts.Count -notin 5,6 -or [string]::Join(';', $parts[0..4]) -cne $expected) {
+                throw "db: $key differs from the make DB settings (check worldserver.conf, worldserver.conf.d and $envKey)"
+            }
+        }
+    }
+    $dir = $settings['SourceDirectory']
+    if (-not $dir) {
+        if ($VerifyUpdateTarget) { throw 'db: update requires an explicit SourceDirectory (run: make conf or set TC_SOURCE_DIRECTORY)' }
+        $dir = $root
+    }
+    if (-not [IO.Path]::IsPathRooted($dir)) { $dir = Join-Path $runtime $dir }
+    $dir = [IO.Path]::GetFullPath($dir)
+    if ($VerifyUpdateTarget -and -not (Test-Path -LiteralPath $dir -PathType Container)) { throw "db: SourceDirectory does not exist: $dir" }
+    $dir
 }
 
 function OpenDump([string]$path) {
@@ -163,31 +227,76 @@ switch ($Action) {
     }
 
     'check' {
+        $runtime = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BinDir)
+        $sourceDir = Get-UpdateSourceDirectory $runtime
         $core = CoreUserWorks
-        if (-not $core -and $Mode -eq 'native') { throw "db: login as $DbUser failed (run: make db-user)" }
+        if (-not $core -and ($VerifyUpdateTarget -or $Mode -eq 'native')) { throw "db: login as $DbUser failed (run: make db-user)" }
         Write-Host ("db: connect as {0}@{1}:{2} -> {3}" -f $DbUser, $DbHost, $DbPort, $(if ($core) { 'OK' } else { 'FAILED (run: make db-user); using root in container' }))
         $q = { param($s) if ($core) { CoreSql $s } else { RootSql $s } }
         Write-Host '--- databases (tables)'
         foreach ($d in $dbs) { Write-Host ("  {0,-16} {1}" -f "$Prefix$d", (TableCount $q "$Prefix$d")) }
         Write-Host '--- realmlist (id, name, address, port, gamebuild)'
         & $q "SELECT id, name, address, port, gamebuild FROM ``${Prefix}auth``.realmlist ORDER BY id;" | ForEach-Object { "  $_" }
-        Write-Host '--- pending update files (in repo, not in `updates`)'
-        foreach ($d in $dbs) {
+        Write-Host '--- pending filenames (make db-update, mask 15; absent from updates)'
+        Write-Host "  SourceDirectory: $sourceDir"
+        $hasDuplicate = $false
+        $conflicts = [Collections.Generic.List[string]]::new()
+        foreach ($d in 'auth', 'characters', 'world', 'hotfixes') {
             $db = "$Prefix$d"
             $has = & $q "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='$db' AND table_name='updates_include';"
             if ("$has".Trim() -ne '1') { Write-Host "  $db : no updates_include table"; continue }
-            $applied = @{}
-            & $q "SELECT name FROM ``$db``.updates;" | ForEach-Object { $applied["$_"] = 1 }
-            $pending = @()
+            $applied = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
+            & $q "SELECT name FROM ``$db``.updates;" | ForEach-Object { [void]$applied.Add($_) }
+            $files = [Collections.Generic.SortedDictionary[string,string]]::new([StringComparer]::Ordinal)
             foreach ($inc in (& $q "SELECT path FROM ``$db``.updates_include;")) {
-                $dir = Join-Path $root ("$inc" -replace '^\$/', '')
-                if (-not (Test-Path $dir)) { continue }
-                Get-ChildItem $dir -Filter *.sql -File -Recurse | Where-Object { -not $applied.ContainsKey($_.Name) } |
-                    ForEach-Object { $pending += ("$inc" -replace '^\$/', '') + '/' + $_.Name }
+                if ($inc.StartsWith('$')) { $dir = $sourceDir + $inc.Substring(1) }
+                elseif ([IO.Path]::IsPathRooted($inc)) { $dir = $inc }
+                else { $dir = Join-Path $runtime $inc }
+                if (-not (Test-Path -LiteralPath $dir -PathType Container)) { Write-Warning "$db : missing include directory $dir"; continue }
+                # Native UpdateFetcher starts at depth 1 and visits at most 10 levels.
+                foreach ($file in (Get-ChildItem -LiteralPath $dir -Filter *.sql -File -Depth 9)) {
+                    if ($file.Extension -cne '.sql') { continue }
+                    $path = $file.FullName
+                    if ($path.StartsWith($sourceDir.TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) {
+                        $path = $path.Substring($sourceDir.TrimEnd('\','/').Length + 1)
+                    }
+                    $path = $path.Replace('\','/')
+                    if ($files.ContainsKey($file.Name)) {
+                        Write-Warning "$db : duplicate filename $($file.Name): $($files[$file.Name]) and $path"
+                        $hasDuplicate = $true
+                    } else { $files.Add($file.Name, $path) }
+                }
             }
+            $pending = @($files.Keys | Where-Object { -not $applied.Contains($_) })
             Write-Host ("  {0,-16} applied {1}, pending {2}" -f $db, $applied.Count, $pending.Count)
-            $pending | Sort-Object | ForEach-Object { "    $_" }
+            foreach ($name in $pending) {
+                "    $name  $($files[$name])"
+                if ($name -cin '2026_10_27_00_rps_min_level_10.sql','2026_10_27_02_rps_xp_for_level.sql',
+                        '2026_10_27_10_rps_starter_outfit_mail.sql','2026_10_27_11_rps_starter_outfit_mail_v2.sql',
+                        '2026_10_27_07_rps_playercreateinfo_cloth.sql') {
+                    $conflicts.Add("$db : manual SQL in update queue: $($files[$name]). Remove the stale automatic copy or fix updates_include; keep the file under sql/custom/manual/rps_combat/.")
+                }
+            }
+            if ($d -eq 'auth' -and $pending -ccontains '2026_10_04_housing_commands_rbac.sql') {
+                $permissions = [int](& $q "SELECT COUNT(*) FROM ``$db``.rbac_permissions WHERE id BETWEEN 886 AND 891;")
+                if ($permissions) {
+                    $conflicts.Add("$db : pending Housing RBAC would delete $permissions existing permissions in IDs 886..891 and their grants")
+                }
+            }
+            if ($d -eq 'world' -and $pending -ccontains '2026_09_27_01_world_housing.sql') {
+                $counts = & $q @"
+SELECT (SELECT COUNT(*) FROM ``$db``.creature WHERE map IN (2735,2736)),
+       (SELECT COUNT(*) FROM ``$db``.gameobject WHERE map IN (2735,2736)),
+       (SELECT COUNT(*) FROM ``$db``.areatrigger WHERE MapId IN (2735,2736));
+"@
+                $creatures, $objects, $triggers = $counts -split "`t"
+                if ([long]$creatures -or [long]$objects -or [long]$triggers) {
+                    $conflicts.Add("$db : pending Housing SQL would clear maps 2735/2736 (creature=$creatures, gameobject=$objects, areatrigger=$triggers)")
+                }
+            }
         }
+        if ($conflicts.Count) { throw ($conflicts -join [Environment]::NewLine) }
+        if ($hasDuplicate) { throw 'db: duplicate SQL filenames would stop the native updater' }
     }
 
     'backup' {

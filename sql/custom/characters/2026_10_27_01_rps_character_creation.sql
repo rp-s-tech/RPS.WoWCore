@@ -1,6 +1,6 @@
 -- Confirmed character creation, audit log and the separate inventory.
--- Apply explicitly to CHARACTERS after 2026_10_26_00_rps_combat_characters.sql, worldserver STOPPED,
--- after a characters DB backup. Idempotent: CREATE IF NOT EXISTS and a one-shot legacy backfill mark.
+-- Apply explicitly to CHARACTERS with worldserver stopped and a characters DB backup.
+-- Fresh installs can create these tables before the combat package. Existing combat profiles are backfilled once.
 -- character_rps_stats is NOT altered: combat profiles keep loading even before this file is applied.
 
 -- One row per character that has a creation state. No row = 'none' (a profile auto-created after
@@ -75,10 +75,31 @@ CREATE TABLE IF NOT EXISTS `rps_migration_marks` (
 -- Profiles that existed before this migration are 'legacy': playable as is, finalized once by the
 -- player. Nothing in character_rps_stats is reset. The mark keeps a rerun from turning profiles
 -- auto-created later (state 'none') into 'legacy'.
-INSERT IGNORE INTO `character_rps_creation` (`guid`, `creation_state`, `archetype_key`, `race_key`)
-SELECT s.`guid`, 'legacy', s.`archetype`, s.`race_id` FROM `character_rps_stats` s
-WHERE NOT EXISTS (SELECT 1 FROM `rps_migration_marks` m WHERE m.`mark` = '2026_10_27_01_rps_creation_legacy');
-INSERT IGNORE INTO `rps_migration_marks` (`mark`) VALUES ('2026_10_27_01_rps_creation_legacy');
+DROP PROCEDURE IF EXISTS rps_backfill_creation_20261027;
+DELIMITER $$
+CREATE PROCEDURE rps_backfill_creation_20261027()
+BEGIN
+    DECLARE EXIT HANDLER FOR SQLEXCEPTION
+    BEGIN
+        ROLLBACK;
+        RESIGNAL;
+    END;
+    START TRANSACTION;
+    INSERT IGNORE INTO rps_migration_marks (mark) VALUES ('2026_10_27_01_rps_creation_legacy');
+    IF ROW_COUNT() = 1 AND EXISTS (
+        SELECT 1 FROM information_schema.tables
+        WHERE table_schema = DATABASE() AND table_name = 'character_rps_stats'
+    ) THEN
+        INSERT INTO character_rps_creation (guid, creation_state, archetype_key, race_key)
+        SELECT s.guid, 'legacy', s.archetype, s.race_id FROM character_rps_stats s
+        LEFT JOIN character_rps_creation c ON c.guid = s.guid
+        WHERE c.guid IS NULL;
+    END IF;
+    COMMIT;
+END$$
+DELIMITER ;
+CALL rps_backfill_creation_20261027();
+DROP PROCEDURE rps_backfill_creation_20261027;
 
 -- Review queries (read-only):
 -- SELECT creation_state, COUNT(*) FROM character_rps_creation GROUP BY creation_state;

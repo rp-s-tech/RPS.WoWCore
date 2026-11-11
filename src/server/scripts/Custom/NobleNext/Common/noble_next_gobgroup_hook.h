@@ -5,11 +5,11 @@
 #include <string>
 
 using NobleNextGameObjectTransformSavedHook = void (*)(ObjectGuid::LowType);
-using NobleNextGameObjectCanDeleteHook = bool (*)(ObjectGuid::LowType, std::string&);
+using NobleNextGameObjectCanEditHook = bool (*)(ObjectGuid::LowType, std::string&);
 using NobleNextGameObjectDeletedHook = void (*)(ObjectGuid::LowType);
 
 inline NobleNextGameObjectTransformSavedHook NobleNextGameObjectTransformSavedCallback = nullptr;
-inline NobleNextGameObjectCanDeleteHook NobleNextGameObjectCanDeleteCallback = nullptr;
+inline NobleNextGameObjectCanEditHook NobleNextGameObjectCanEditCallback = nullptr;
 inline NobleNextGameObjectDeletedHook NobleNextGameObjectDeletedCallback = nullptr;
 
 inline void NobleNext_RegisterGameObjectTransformSavedHook(NobleNextGameObjectTransformSavedHook callback)
@@ -17,10 +17,10 @@ inline void NobleNext_RegisterGameObjectTransformSavedHook(NobleNextGameObjectTr
     NobleNextGameObjectTransformSavedCallback = callback;
 }
 
-inline void NobleNext_RegisterGameObjectDeleteHooks(
-    NobleNextGameObjectCanDeleteHook canDeleteCallback, NobleNextGameObjectDeletedHook deletedCallback)
+inline void NobleNext_RegisterGameObjectMutationHooks(
+    NobleNextGameObjectCanEditHook canEditCallback, NobleNextGameObjectDeletedHook deletedCallback)
 {
-    NobleNextGameObjectCanDeleteCallback = canDeleteCallback;
+    NobleNextGameObjectCanEditCallback = canEditCallback;
     NobleNextGameObjectDeletedCallback = deletedCallback;
 }
 
@@ -30,10 +30,10 @@ inline void NobleNext_OnGameObjectTransformSaved(ObjectGuid::LowType spawnId)
         NobleNextGameObjectTransformSavedCallback(spawnId);
 }
 
-inline bool NobleNext_CanGameObjectBeDeleted(ObjectGuid::LowType spawnId, std::string& error)
+inline bool NobleNext_CanGameObjectBeEdited(ObjectGuid::LowType spawnId, std::string& error)
 {
-    return !NobleNextGameObjectCanDeleteCallback
-        || NobleNextGameObjectCanDeleteCallback(spawnId, error);
+    return !NobleNextGameObjectCanEditCallback
+        || NobleNextGameObjectCanEditCallback(spawnId, error);
 }
 
 inline void NobleNext_OnGameObjectDeleted(ObjectGuid::LowType spawnId)

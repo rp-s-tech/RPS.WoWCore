@@ -20,9 +20,6 @@ void AddSC_NobleNextPetCommands();
 void AddSC_NobleNextArmyCommands();
 void AddSC_NobleNextMasterCommands();
 void AddSC_NobleNextMasterScripts();
-void AddSC_NobleNextBattleCommands();
-void AddSC_NobleNextBattleScripts();
-void AddSC_NobleNextRoleStatCommands();
 void AddSC_NobleNextReloadHotfixItemCommands();
 void AddSC_NobleNextPersistenceCommands();
 
@@ -46,9 +43,6 @@ void AddSC_NobleNextScripts()
     AddSC_NobleNextArmyCommands();
     AddSC_NobleNextMasterCommands();
     AddSC_NobleNextMasterScripts();
-    AddSC_NobleNextBattleCommands();
-    AddSC_NobleNextBattleScripts();
-    AddSC_NobleNextRoleStatCommands();
     AddSC_NobleNextReloadHotfixItemCommands();
     AddSC_NobleNextPersistenceCommands();
 }

@@ -170,7 +170,7 @@ namespace RoleplayCore::NobleNext
 
         // after vanilla .gobject move/turn SaveToDB
         void OnSingleObjectTransformSaved(ObjectGuid::LowType spawnId);
-        bool CanDeleteGameObject(ObjectGuid::LowType spawnId, std::string& error) const;
+        bool CanEditGameObject(ObjectGuid::LowType spawnId, std::string& error) const;
         void OnGameObjectDeleted(ObjectGuid::LowType spawnId);
 
         // group transforms (async jobs)

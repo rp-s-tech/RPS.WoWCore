@@ -166,8 +166,18 @@ class gobject_commandscript : public CommandScript
             RoleplayCommandPhaseGuard::ValidateAllPhasesBypass(player, handler, requestedBypass, auditAction);
         if (requestedBypass && !bypass)
             return false;
-        return RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(player, handler, RoleplayPhaseSpawnType::GameObject,
-            spawnId, bypass, auditAction);
+        if (!RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(player, handler, RoleplayPhaseSpawnType::GameObject,
+            spawnId, bypass, auditAction, true))
+            return false;
+
+        std::string error;
+        if (!NobleNext_CanGameObjectBeEdited(spawnId, error))
+        {
+            handler->SendSysMessage(error);
+            handler->SetSentErrorMessage(true);
+            return false;
+        }
+        return true;
     }
 
     // Defined before GetCommands(): clang needs the name visible when binding the command table.
@@ -199,7 +209,7 @@ class gobject_commandscript : public CommandScript
             data->spawnPoint.GetPositionX(), data->spawnPoint.GetPositionY(), data->spawnPoint.GetPositionZ(),
             data->spawnPoint.GetOrientation(), data->mapId, data->phaseId, data->phaseGroup);
         std::string deleteError;
-        if (!NobleNext_CanGameObjectBeDeleted(guidLow, deleteError))
+        if (!NobleNext_CanGameObjectBeEdited(guidLow, deleteError))
             handler->PSendSysMessage("Удаление ограничено: {}", deleteError);
         else
             handler->SendSysMessage("Это серверный GO. Удаление возможно при наличии прав в его RP-фазе. Декорации карты/WMO этой командой не удаляются.");
@@ -629,14 +639,6 @@ public:
     {
         if (!CheckGameObjectMutation(handler, *spawnId, "gobject_delete", allPhases))
             return false;
-
-        std::string deleteError;
-        if (!NobleNext_CanGameObjectBeDeleted(*spawnId, deleteError))
-        {
-            handler->SendSysMessage(deleteError.c_str());
-            handler->SetSentErrorMessage(true);
-            return false;
-        }
 
         if (GameObject* object = handler->GetObjectFromPlayerMapByDbGuid(spawnId))
         {
