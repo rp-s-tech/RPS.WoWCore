@@ -53,7 +53,7 @@ namespace RoleplayCore::NobleNext
             handler->SendSysMessage("[NobleNext] Статус модулей (C++ + Lua)");
             handler->SendSysMessage("  POI — Custom/Poi (C++)");
             handler->SendSysMessage("  Weather, Daytime, GobTele, GobMover, GobGroup — Custom/NobleNext (C++)");
-            handler->SendSysMessage("  Waypoints, Pet, Army, Master, Battle — Custom/NobleNext (C++)");
+            handler->SendSysMessage("  Waypoints, Pet, Army, Master — Custom/NobleNext (C++)");
             handler->SendSysMessage("  AIO UI — NobleNextLua (Eluna)");
             handler->SendSysMessage("Документация: Docs/NOBLENEXT.md");
             return true;
@@ -66,13 +66,12 @@ namespace RoleplayCore::NobleNext
 
             handler->SendSysMessage("Role Play Systems (.rps) — единая точка:");
             handler->SendSysMessage("  .rps phase …          — RP world maps (alias: .rp phase)");
-            handler->SendSysMessage("  .rps character set|add|dam|remove {hp|armor|en|focus|…}");
             handler->SendSysMessage("  .rps say say|emote|yell <text>");
-            handler->SendSysMessage("  .rps npc setstat|roll|reload …");
+            handler->SendSysMessage("  .rps npc roll <statKey> …");
             handler->SendSysMessage("  .rps help|status");
             handler->SendSysMessage("Прочее NobleNext:");
             handler->SendSysMessage("  .poi*, .weather, .daytime, .gobject group …, .pet*, .wpmove");
-            handler->SendSysMessage("Legacy aliases: .sethp, .nnsay, .nnstatus (пока сохранены)");
+            handler->SendSysMessage("Legacy aliases: .nnsay, .nnstatus (пока сохранены)");
             return true;
         }
 
