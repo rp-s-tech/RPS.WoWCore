@@ -1819,13 +1819,14 @@ bool GobGroupMgr::EnqueueTransform(ObjectGuid::LowType rootGuid, Position const&
     auto jobIt = _jobs.find(rootGuid);
     if (jobIt != _jobs.end() && jobIt->second)
     {
-        JobPhase const phase = jobIt->second->Phase;
-        if (phase == JobPhase::DbPending || phase == JobPhase::RuntimePending)
+        GroupJob const& active = *jobIt->second;
+        if (active.Phase == JobPhase::DbPending || active.Phase == JobPhase::RuntimePending
+            || (active.Phase == JobPhase::Calculated && !active.PendingSizes.empty()))
         {
             error = "Group transform already in progress";
             return false;
         }
-        // coalesce Queued/Calculated/terminal
+        // Only position/rotation plans can be replaced: a scale also owns pending sizes and offsets.
     }
 
     std::unordered_map<ObjectGuid::LowType, Position> positions;
@@ -2143,7 +2144,7 @@ void GobGroupMgr::OnSingleObjectTransformSaved(ObjectGuid::LowType spawnId)
     Capture(spawnId, true, error);
 }
 
-bool GobGroupMgr::CanDeleteGameObject(ObjectGuid::LowType spawnId, std::string& error) const
+bool GobGroupMgr::CanEditGameObject(ObjectGuid::LowType spawnId, std::string& error) const
 {
     std::scoped_lock lock(_mutex);
 
@@ -2154,7 +2155,7 @@ bool GobGroupMgr::CanDeleteGameObject(ObjectGuid::LowType spawnId, std::string& 
     if (IsBusyUnlocked(resolved.RootGuid))
     {
         error = Trinity::StringFormat(
-            "GO {} belongs to group {} with an active transform; wait for completion before deleting it",
+            "GO {} входит в группу {}. Дождитесь окончания преобразования группы и повторите команду.",
             spawnId, resolved.RootGuid);
         return false;
     }

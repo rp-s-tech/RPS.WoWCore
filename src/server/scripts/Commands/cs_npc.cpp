@@ -94,7 +94,7 @@ class npc_commandscript : public CommandScript
         if (requestedBypass && !bypass)
             return false;
         return RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(player, handler, RoleplayPhaseSpawnType::Creature,
-            spawnId, bypass, auditAction);
+            spawnId, bypass, auditAction, true);
     }
 
 public:

@@ -474,8 +474,16 @@ namespace RoleplayCore::NobleNext
             bool bypass = false;
             if (!ResolveRequestedBypass(player, handler, allPhases.has_value(), "gobgroup_delete", bypass))
                 return false;
-            if (!ResolveGroupRoot(handler, player, *groupGuid, root, "delete", bypass, true, "gobgroup_delete"))
+            if (!ResolveGroupRoot(handler, player, *groupGuid, root, "delete", bypass))
                 return false;
+
+            std::vector<uint64> spawns;
+            if (!sGobGroupMgr.TryGetGroupSpawnIds(root, spawns))
+                return Fail(handler, "delete", "Группа не найдена.");
+            for (uint64 guid : spawns)
+                if (!RoleplayCommandPhaseGuard::AllowsViewerSpawnMutation(player, handler, RoleplayPhaseSpawnType::GameObject,
+                    guid, bypass, "gobgroup_delete", true))
+                    return false;
 
             std::string report;
             if (!sGobGroupMgr.DeleteFull(root, true, report))

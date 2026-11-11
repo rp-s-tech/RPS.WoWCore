@@ -44,7 +44,8 @@ namespace RoleplayCommandPhaseGuard
 
     // Mutation gate: same context, or audited staff bypass. Fail-closed before DB/runtime writes.
     TC_GAME_API bool AllowsViewerSpawnMutation(Player* viewer, ChatHandler* handler,
-        RoleplayPhaseSpawnType type, uint64 spawnId, bool allPhasesBypass, std::string_view auditAction);
+        RoleplayPhaseSpawnType type, uint64 spawnId, bool allPhasesBypass, std::string_view auditAction,
+        bool requireCurrentMap = false);
 
     TC_GAME_API bool AuthorizeGobMoverTarget(Player* viewer, RoleplayPhaseSpawnType type, uint64 spawnId,
         bool allPhasesBypass);

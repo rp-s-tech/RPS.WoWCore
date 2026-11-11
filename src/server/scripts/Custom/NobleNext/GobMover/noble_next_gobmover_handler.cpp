@@ -93,8 +93,7 @@ namespace RoleplayCore::NobleNext
         return player->FindNearestGameObjectWithOptions(range, { .IgnorePhases = true });
     }
 
-    bool GobMoverHandler::NotifyClientTarget(Player* player, ObjectGuid::LowType spawnId, std::string const& name,
-        uint64 logicalPhaseId)
+    bool GobMoverHandler::NotifyClientTarget(Player* player, GameObject* go, uint64 logicalPhaseId, uint32 requestId)
     {
 #ifdef ELUNA
         Eluna* eluna = sWorld->GetEluna();
@@ -137,90 +136,59 @@ namespace RoleplayCore::NobleNext
         }
 
         eluna->Push(player);
-        eluna->Push(static_cast<unsigned long long>(spawnId));
-        eluna->Push(name);
-        eluna->Push(static_cast<unsigned long long>(logicalPhaseId));
-        return eluna->ExecuteCall(4, 0);
+        eluna->Push(std::to_string(go->GetSpawnId()));
+        eluna->Push(go->GetGOInfo()->name);
+        eluna->Push(std::to_string(logicalPhaseId));
+        eluna->Push(go->GetEntry());
+        eluna->Push(requestId);
+        return eluna->ExecuteCall(6, 0);
 #else
         (void)player;
-        (void)spawnId;
-        (void)name;
+        (void)go;
+        (void)requestId;
         (void)logicalPhaseId;
         return false;
 #endif
     }
 
-    bool GobMoverHandler::SelectNearestTarget(Player* player, uint64* targetPhaseId,
-        ObjectGuid::LowType* selectedSpawnId, float range) const
+    GameObject* GobMoverHandler::SelectNearestTarget(Player* player, bool preferLast) const
     {
         if (!player)
-            return false;
+            return nullptr;
 
         GameObject* go = nullptr;
 
         // Prefer last .gob target / near selection when it is still in range.
-        if (ObjectGuid::LowType const lastSpawnId = player->GetLastTargetedGO2())
+        if (ObjectGuid::LowType const lastSpawnId = preferLast ? player->GetLastTargetedGO2() : 0)
         {
             if (GameObject* lastGo = LoadLiveGameObject(player, lastSpawnId))
             {
-                if (player->GetDistance(lastGo) <= range && player->CanShareRoleplayContext(lastGo))
+                if (player->GetDistance(lastGo) <= DefaultSearchRadius && player->CanShareRoleplayContext(lastGo))
                     go = lastGo;
             }
         }
 
         if (!go)
-            go = FindNearestGameObject(player, range);
+            go = FindNearestGameObject(player, DefaultSearchRadius);
 
         if (!go)
         {
             // Live grid can miss housing/unloaded cells; .gob near uses DB — mirror that, then load the grid.
-            ObjectGuid::LowType const spawnId = FindNearestSpawnIdInDb(player, range);
+            ObjectGuid::LowType const spawnId = FindNearestSpawnIdInDb(player, DefaultSearchRadius);
             if (!spawnId)
-                return false;
+                return nullptr;
 
             go = LoadLiveGameObject(player, spawnId);
             if (!go)
-                return false;
+                return nullptr;
         }
 
-        std::string name;
-        if (GameObjectTemplate const* info = go->GetGOInfo())
-            name = info->name;
-
-        ObjectGuid::LowType const spawnId = go->GetSpawnId();
-        uint64 const phaseId = sRoleplayPhaseMgr.GetSpawnPhaseId(RoleplayPhaseSpawnType::GameObject, spawnId, player->GetMapId());
-        if (targetPhaseId)
-            *targetPhaseId = phaseId;
-        if (selectedSpawnId)
-            *selectedSpawnId = spawnId;
-
-        // Selection succeeds even if AIO notify fails (missing global / client addon).
-        NotifyClientTarget(player, spawnId, name, phaseId);
-        return true;
+        return go;
     }
 
-    bool GobMoverHandler::SelectBySpawnId(Player* player, ObjectGuid::LowType spawnId, bool allowCrossPhase,
-        uint64* targetPhaseId) const
+    GameObject* GobMoverHandler::SelectBySpawnId(Player* player, ObjectGuid::LowType spawnId, bool allowCrossPhase) const
     {
-        if (!player || !spawnId)
-            return false;
-
         GameObject* go = LoadLiveGameObject(player, spawnId);
-        if (!go)
-            return false;
-
-        uint64 const phaseId = sRoleplayPhaseMgr.GetSpawnPhaseId(RoleplayPhaseSpawnType::GameObject, spawnId, player->GetMapId());
-        if (!player->CanShareRoleplayContext(go) && !allowCrossPhase)
-            return false;
-
-        std::string name;
-        if (GameObjectTemplate const* info = go->GetGOInfo())
-            name = info->name;
-
-        if (targetPhaseId)
-            *targetPhaseId = phaseId;
-
-        NotifyClientTarget(player, go->GetSpawnId(), name, phaseId);
-        return true;
+        return go && (player->CanShareRoleplayContext(go) || allowCrossPhase) ? go : nullptr;
     }
 }

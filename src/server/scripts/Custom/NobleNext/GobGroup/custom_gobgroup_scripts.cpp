@@ -32,10 +32,10 @@ void AddSC_NobleNextGobGroupScripts()
     {
         RoleplayCore::NobleNext::GobGroupMgr::Instance().OnSingleObjectTransformSaved(spawnId);
     });
-    NobleNext_RegisterGameObjectDeleteHooks(
+    NobleNext_RegisterGameObjectMutationHooks(
         [](ObjectGuid::LowType spawnId, std::string& error)
         {
-            return RoleplayCore::NobleNext::GobGroupMgr::Instance().CanDeleteGameObject(spawnId, error);
+            return RoleplayCore::NobleNext::GobGroupMgr::Instance().CanEditGameObject(spawnId, error);
         },
         [](ObjectGuid::LowType spawnId)
         {
